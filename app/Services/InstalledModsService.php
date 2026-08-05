@@ -14,6 +14,9 @@ class InstalledModsService
 {
     private const STATE_FILE = '.modpacks-mods-state.json';
     private const MAX_HASH_BYTES = 67108864;
+    private const MAX_UNCACHED_PER_SCAN = 2;
+    private const MAX_SCAN_SECONDS = 12.0;
+    private const LOOKUP_TIMEOUT = 4;
     private const CURSEFORGE_GAME_MINECRAFT = 432;
 
     public function __construct(
@@ -30,6 +33,8 @@ class InstalledModsService
         $state = $this->readState($repository);
         $nextState = [];
         $mods = [];
+        $started = microtime(true);
+        $scanned = 0;
 
         foreach ($entries as $entry) {
             $path = 'mods/' . $entry['name'];
@@ -42,17 +47,39 @@ class InstalledModsService
                 continue;
             }
 
+            if ($scanned >= self::MAX_UNCACHED_PER_SCAN || microtime(true) - $started >= self::MAX_SCAN_SECONDS) {
+                $mods[] = $this->pending($path, $entry);
+                continue;
+            }
+
             $mod = $this->identify($repository, $path, $entry);
             $mods[] = $mod;
             $nextState[$path] = [
                 'signature' => $signature,
                 'mod' => $mod,
             ];
+            $scanned++;
         }
 
         $this->writeState($repository, $nextState);
 
         return $mods;
+    }
+
+    private function pending(string $path, array $entry): array
+    {
+        return [
+            'path' => $path,
+            'provider' => null,
+            'project_id' => null,
+            'project_name' => pathinfo($entry['name'], PATHINFO_FILENAME),
+            'version_id' => null,
+            'version_name' => $entry['name'],
+            'icon_url' => null,
+            'size' => $entry['size'] ?? null,
+            'recognized' => false,
+            'reason' => 'pending_scan',
+        ];
     }
 
     /** @return array<int, array{name: string, size: int|null, modified: string|null}> */
@@ -148,7 +175,7 @@ class InstalledModsService
             $version = Cache::remember("modpacks:mods:installed:modrinth:$sha1", 86400, fn () => Http::withHeaders([
                 'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
             ])
-                ->timeout(15)
+                ->timeout(self::LOOKUP_TIMEOUT)
                 ->get("https://api.modrinth.com/v2/version_file/{$sha1}", ['algorithm' => 'sha1'])
                 ->throw()
                 ->json());
@@ -180,7 +207,7 @@ class InstalledModsService
             return Cache::remember("modpacks:mods:installed:modrinth:project:$projectId", 86400, fn () => Http::withHeaders([
                 'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
             ])
-                ->timeout(15)
+                ->timeout(self::LOOKUP_TIMEOUT)
                 ->get("https://api.modrinth.com/v2/project/{$projectId}")
                 ->throw()
                 ->json());
@@ -200,7 +227,7 @@ class InstalledModsService
         try {
             $match = Cache::remember("modpacks:mods:installed:curseforge:$fingerprint", 86400, function () use ($key, $fingerprint) {
                 $response = Http::withHeaders(['x-api-key' => $key])
-                    ->timeout(15)
+                    ->timeout(self::LOOKUP_TIMEOUT)
                     ->post('https://api.curseforge.com/v1/fingerprints/' . self::CURSEFORGE_GAME_MINECRAFT, [
                         'fingerprints' => [$fingerprint],
                     ])
@@ -249,7 +276,7 @@ class InstalledModsService
             return Cache::remember("modpacks:mods:installed:curseforge:project:$projectId", 86400, fn () => Http::withHeaders([
                 'x-api-key' => $key,
             ])
-                ->timeout(15)
+                ->timeout(self::LOOKUP_TIMEOUT)
                 ->get("https://api.curseforge.com/v1/mods/{$projectId}")
                 ->throw()
                 ->json()['data'] ?? []);

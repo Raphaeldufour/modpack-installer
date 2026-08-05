@@ -200,6 +200,13 @@ const ModsSection = () => {
     };
 
     const field = 'rounded border border-neutral-500 bg-neutral-600 p-2 text-sm text-neutral-200';
+    const installedLabel = (mod: InstalledMod): string => {
+        if (mod.recognized) return `${mod.provider} - ${mod.version_name}`;
+        if (mod.reason === 'pending_scan') return `${mod.version_name} - waiting to scan`;
+        if (mod.reason === 'too_large') return `${mod.version_name} - too large to identify`;
+
+        return `${mod.version_name} - not recognized`;
+    };
 
     return (
         <PageContentBlock title={'Mods'}>
@@ -261,9 +268,7 @@ const ModsSection = () => {
                                         {mod.project_name}
                                     </p>
                                     <p className={'truncate text-xs text-neutral-400'}>
-                                        {mod.recognized
-                                            ? `${mod.provider} - ${mod.version_name}`
-                                            : `${mod.version_name} - not recognized`}
+                                        {installedLabel(mod)}
                                     </p>
                                 </div>
                             </div>
