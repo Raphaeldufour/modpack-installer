@@ -16,3 +16,4 @@ Navigation:
   Routes:
     - { Name: "Versions", Path: "/versions", Type: "server", Component: "sections/VersionsSection", AdminOnly: "false" }
     - { Name: "Modpacks", Path: "/modpacks", Type: "server", Component: "sections/ModpacksSection", AdminOnly: "false" }
+    - { Name: "Mods", Path: "/mods", Type: "server", Component: "sections/ModsSection", AdminOnly: "false" }

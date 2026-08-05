@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\ModController;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\ModpackController;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\VersionController;
 use Pterodactyl\Http\Middleware\Api\Client\Server\AuthenticateServerAccess;
@@ -47,6 +48,19 @@ Route::group([
 
     Route::post('/install', [ModpackController::class, 'install'])
         ->name('api:client:server.modpacks.install');
+
+    Route::get('/mods/providers', [ModController::class, 'providers'])
+        ->name('api:client:server.modpacks.mods.providers');
+
+    Route::get('/mods', [ModController::class, 'search'])
+        ->name('api:client:server.modpacks.mods.search');
+
+    Route::get('/mods/{mod}/versions', [ModController::class, 'versions'])
+        ->where('mod', '[A-Za-z0-9._-]+')
+        ->name('api:client:server.modpacks.mods.versions');
+
+    Route::post('/mods/install', [ModController::class, 'install'])
+        ->name('api:client:server.modpacks.mods.install');
 
     // Versions tab. Kept under /software so it cannot collide with the modpack
     // routes above, which already own /packs and /versions.
