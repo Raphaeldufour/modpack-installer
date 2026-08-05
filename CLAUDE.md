@@ -113,8 +113,12 @@ skipped when empty, and `dashboard.components`, `data.directory`, `data.public`,
   the file. `Component:` values are relative to that directory and drop the
   extension. Still worth re-diffing after a Blueprint upgrade: this API has
   moved between releases before.
-- **Client route prefix.** The React component hardcodes
-  `/api/client/servers/{uuid}/modpacks`. Confirm with `route:list`.
+- **Client route prefix.** Resolved: Blueprint mounts `requests.routers.client`
+  under `/api/client/extensions/<identifier>`, so the real base is
+  `/api/client/extensions/modpacks/servers/{server}`. The earlier guess of
+  `/api/client/servers/{uuid}/modpacks` produced a 404 on every call. The route
+  group therefore does not repeat `modpacks` in its own prefix. Re-check with
+  `route:list` after a Blueprint upgrade — the component hardcodes this.
 - **The admin controller's class name.** `modpacksExtensionController` and the
   two-classes-in-one-file layout come from Blueprint's admin template, which
   substitutes `info.identifier` into both. If the page 500s on load, that

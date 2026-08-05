@@ -6,7 +6,40 @@
 set -euo pipefail
 
 apt-get update -qq
-apt-get install -y -qq curl jq unzip openjdk-21-jre-headless >/dev/null
+apt-get install -y -qq curl jq unzip ca-certificates >/dev/null
+
+# A JRE is only needed to run the Forge/NeoForge installers. Fabric, Quilt and
+# publisher server packs are plain downloads, so Java is fetched on demand
+# rather than up front — a missing JRE must not fail an install that never
+# needed one.
+#
+# Do not ask for openjdk-21 unconditionally: Debian stable ships 17, and
+# `apt-get install openjdk-21-jre-headless` fails with "no installation
+# candidate", which under `set -e` kills this script before anything is written
+# and leaves the server with no start.sh at all.
+ensure_java() {
+    command -v java >/dev/null 2>&1 && return 0
+
+    echo "Installing a JRE for the loader installer..."
+    apt-get install -y -qq openjdk-21-jre-headless >/dev/null 2>&1 && return 0
+
+    # 21 lives in backports on releases that predate it.
+    local codename
+    codename=$(. /etc/os-release && echo "${VERSION_CODENAME:-}")
+    if [ -n "$codename" ]; then
+        echo "deb http://deb.debian.org/debian ${codename}-backports main" \
+            > /etc/apt/sources.list.d/backports.list
+        apt-get update -qq >/dev/null 2>&1 || true
+        apt-get install -y -qq -t "${codename}-backports" openjdk-21-jre-headless >/dev/null 2>&1 && return 0
+    fi
+
+    # Forge for Minecraft 1.20.4 and older runs fine on 17.
+    apt-get install -y -qq openjdk-17-jre-headless >/dev/null 2>&1 && return 0
+    apt-get install -y -qq default-jre-headless >/dev/null 2>&1 && return 0
+
+    echo "FATAL: no JRE could be installed, and this loader needs one to run its installer." >&2
+    return 1
+}
 
 cd /mnt/server
 WORK=$(mktemp -d)
@@ -28,11 +61,13 @@ install_loader() {
 
     case "$loader" in
         forge)
+            ensure_java
             curl -fsSL -o installer.jar \
                 "https://maven.minecraftforge.net/net/minecraftforge/forge/${mc}-${ver}/forge-${mc}-${ver}-installer.jar"
             java -jar installer.jar --installServer && rm -f installer.jar
             ;;
         neoforge)
+            ensure_java
             curl -fsSL -o installer.jar \
                 "https://maven.neoforged.net/releases/net/neoforged/neoforge/${ver}/neoforge-${ver}-installer.jar"
             java -jar installer.jar --installServer && rm -f installer.jar

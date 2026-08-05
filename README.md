@@ -87,7 +87,9 @@ minimum; consider a shared cache keyed by provider rather than per-panel.
 
 **Route prefix.** Confirm where Blueprint actually mounted your client routes
 before trusting the URL hardcoded in the React component:
-`php artisan route:list | grep modpacks`.
+`php artisan route:list | grep modpacks`. On Blueprint beta-2026-06 it is
+`/api/client/extensions/modpacks/servers/{server}` — extension routes are not
+mounted alongside the panel's own `/api/client/servers` routes.
 
 **Permissions.** Installing wipes the filesystem and rewrites startup. The
 controller requires both `startup.update` and `file.delete`. Do not loosen this

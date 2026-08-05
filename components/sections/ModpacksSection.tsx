@@ -53,7 +53,10 @@ const ModpacksSection = () => {
     const [canUpdateStartup, canDeleteFiles] = usePermissions(['startup.update', 'file.delete']);
     const canInstall = canUpdateStartup && canDeleteFiles;
 
-    const base = `/api/client/servers/${uuid}/modpacks`;
+    // Blueprint mounts extension client routes under /api/client/extensions/<identifier>,
+    // not alongside the panel's own /api/client/servers routes. Confirmed with
+    // `php artisan route:list | grep modpacks`; re-check after a Blueprint upgrade.
+    const base = `/api/client/extensions/modpacks/servers/${uuid}`;
 
     const [providers, setProviders] = useState<Provider[]>([]);
     const [provider, setProvider] = useState<string>('');

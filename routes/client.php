@@ -9,13 +9,15 @@ use Pterodactyl\Http\Middleware\Api\Client\Server\AuthenticateServerAccess;
 | Modpacks — client API
 |--------------------------------------------------------------------------
 |
-| Blueprint merges this file into the panel's client API router, so the paths
-| below are relative to whatever prefix that router carries — normally
-| /api/client, giving /api/client/servers/{server}/modpacks/...
+| Blueprint mounts this file under /api/client/extensions/<identifier>, so the
+| paths below are relative to /api/client/extensions/modpacks and the group
+| prefix here deliberately does not repeat "modpacks". Full shape:
 |
-| Do not take that on trust. Blueprint has moved extension routes between
-| releases, and ModpacksContainer.tsx builds its URLs from this assumption.
-| Confirm on your panel before debugging a 404 any further:
+|     /api/client/extensions/modpacks/servers/{server}/providers
+|
+| Confirmed with route:list on Blueprint beta-2026-06. It has moved between
+| releases, and ModpacksSection.tsx builds its URLs from this assumption, so
+| re-check after an upgrade before debugging a 404 any further:
 |
 |     php artisan route:list | grep modpacks
 |
@@ -26,7 +28,7 @@ use Pterodactyl\Http\Middleware\Api\Client\Server\AuthenticateServerAccess;
 */
 
 Route::group([
-    'prefix' => '/servers/{server}/modpacks',
+    'prefix' => '/servers/{server}',
     'middleware' => [AuthenticateServerAccess::class],
 ], function () {
     Route::get('/providers', [ModpackController::class, 'providers'])

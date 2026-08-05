@@ -13,14 +13,14 @@ Ce document couvre les deux sens de « installer le blueprint » :
 > Blueprint — **jamais** sur un panel de production. C'est aussi la règle posée dans
 > [`CLAUDE.md`](CLAUDE.md).
 
-> **État actuel du dépôt.** L'extension est complète : providers, DTO, registre,
-> service d'installation, contrôleur, routes, onglet React, page admin, egg, et tous
-> les chemins déclarés dans [`conf.yml`](conf.yml) existent — `blueprint -build` a de
-> quoi aboutir sans rien créer au préalable.
+> **État actuel du dépôt.** L'extension est complète et a été buildée avec succès sur
+> un panel réel (Blueprint `beta-2026-06`) : `blueprint -build` aboutit, les assets
+> compilent, l'onglet s'affiche, et les routes client et admin sont montées.
 >
-> Ce qui n'a pas pu être vérifié sans panel : les signatures internes de Pterodactyl
-> et le préfixe réel des routes client. Voir [« Ce qui manque encore »](#ce-qui-manque-encore)
-> et le [dépannage](#dépannage).
+> Le préfixe des routes client est désormais **confirmé** :
+> `/api/client/extensions/modpacks/servers/{server}`. Les pièges rencontrés en chemin
+> (commentaires dans `conf.yml`, namespace de `app/`, placeholders dans le JSX) sont
+> documentés au [dépannage](#dépannage) — ils sont tous invisibles à la lecture du code.
 
 ---
 
@@ -271,14 +271,25 @@ mis en cache, un onglet neuf n'apparaît pas sans rechargement forcé.
 ```bash
 # Les routes client ont-elles bien été montées, et sous quel préfixe ?
 php artisan route:list | grep modpacks
-
-# L'extension est-elle enregistrée ?
-blueprint -list
 ```
 
-Le préfixe des routes compte : le composant React de ce projet code en dur
-`/api/client/servers/{uuid}/modpacks`. `CLAUDE.md` le signale comme **non vérifié**.
-Si `route:list` montre autre chose, c'est le composant qu'il faut corriger, pas la route.
+Attendu :
+
+```
+GET|HEAD  api/client/extensions/modpacks/servers/{server}/providers
+GET|HEAD  api/client/extensions/modpacks/servers/{server}/packs
+GET|HEAD  api/client/extensions/modpacks/servers/{server}/packs/{pack}/versions
+POST      api/client/extensions/modpacks/servers/{server}/install
+GET|HEAD  admin/extensions/modpacks
+```
+
+**Blueprint monte les routes d'extension sous `/api/client/extensions/<identifier>`**,
+et non à côté des routes `/api/client/servers` du panel. C'est pourquoi le groupe de
+`routes/client.php` ne répète pas `modpacks` dans son propre préfixe, et pourquoi
+`ModpacksSection.tsx` construit ses URL sur cette base. Si `route:list` montre autre
+chose après une montée de version de Blueprint, c'est le composant qu'il faut aligner.
+
+(`blueprint -list` n'existe pas ; l'extension apparaît dans `/admin/extensions`.)
 
 ---
 
@@ -415,10 +426,12 @@ réserves de préfixe évoquées en [B.5](#b5-vérifier)) :
 
 | Méthode | Chemin | Permission | Rôle |
 |---|---|---|---|
-| `GET` | `…/servers/{server}/modpacks/providers` | accès au serveur | Liste des providers |
-| `GET` | `…/modpacks/packs?provider=&query=&page=` | accès au serveur | Recherche de packs |
-| `GET` | `…/modpacks/packs/{pack}/versions?provider=` | accès au serveur | Versions d'un pack |
-| `POST` | `…/modpacks/install` | `startup.update` **+** `file.delete` | Lance l'installation |
+| `GET` | `…/servers/{server}/providers` | accès au serveur | Liste des providers |
+| `GET` | `…/servers/{server}/packs?provider=&query=&page=` | accès au serveur | Recherche de packs |
+| `GET` | `…/servers/{server}/packs/{pack}/versions?provider=` | accès au serveur | Versions d'un pack |
+| `POST` | `…/servers/{server}/install` | `startup.update` **+** `file.delete` | Lance l'installation |
+
+Base : `/api/client/extensions/modpacks`.
 
 Corps du `POST /install` :
 
@@ -429,12 +442,12 @@ Corps du `POST /install` :
 Il répond `202 Accepted` : le panel a seulement demandé à Wings de réinstaller, la
 progression réelle s'affiche dans la console du serveur.
 
-Test rapide en ligne de commande (le préfixe exact vient de `route:list`) :
+Test rapide en ligne de commande :
 
 ```bash
 curl -H "Authorization: Bearer $PTERO_CLIENT_KEY" \
      -H "Accept: application/json" \
-     "https://panel.example.com/api/client/servers/1a7ce997/modpacks/packs?provider=modrinth&query=create"
+     "https://panel.example.com/api/client/extensions/modpacks/servers/1a7ce997/packs?provider=modrinth&query=create"
 ```
 
 **La double permission sur `install` est intentionnelle** : installer un pack efface
@@ -516,7 +529,7 @@ Rien de bloquant. Restent des points de confort :
 | `blueprint -build` : commande inconnue | Mode développement désactivé (cf. [A.5](#a5-activer-le-mode-développement)). |
 | L'onglet n'apparaît pas | 1) Cache navigateur — Ctrl+Shift+R (le panel sert du JS compilé). 2) `dashboard.components` doit valoir `components` (le dossier), pas `components/Components.yml`. 3) Le schéma a déjà changé entre versions de Blueprint : diffe avec le gabarit `3` de `blueprint -init`. |
 | L'onglet apparaît sur un serveur non-Minecraft | Manque connu, pas un bug de placement : le filtrage par egg n'est pas implémenté. |
-| 404 sur les appels API de l'onglet | Le préfixe de route réel diffère de celui codé en dur. Vérifie avec `php artisan route:list \| grep modpacks`. |
+| `The route api/client/... could not be found` dans l'onglet | Le préfixe codé en dur ne correspond pas à celui monté. La base est `/api/client/extensions/modpacks`, pas `/api/client`. Vérifie avec `php artisan route:list \| grep modpacks`. |
 | `CurseForge is not configured` | Aucune clé enregistrée : **Admin → Extensions → Modpacks**. Si tu configures par fichier, `config/modpacks.php` est absent ou la config n'a pas été rechargée (`php artisan config:clear`). |
 | `The modpack installer egg has not been configured` | Aucun egg sélectionné sur la page admin, ou l'egg choisi a été supprimé depuis. |
 | `JSX value should be either an expression or a quoted JSX text` pendant `Rebuilding panel assets` | Un placeholder Blueprint a été substitué dans le JSX (`value={version}` → `value=0.1.0`). Renomme la variable ou échappe-la en `!{version}` (cf. [L'onglet React](#longlet-react)). Le build Blueprint affiche quand même `SUCCESS` : c'est la compilation des assets qui a échoué, pas l'installation. |
