@@ -1,0 +1,18 @@
+# Blueprint build artifacts
+*.blueprint
+.blueprint/
+
+# PHP / JS dependencies (the panel provides these; nothing here vendors them)
+/vendor/
+/node_modules/
+
+# Local, host-specific config — never commit an API key
+config/modpacks.php
+.env
+.env.*
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,179 @@
+#!/bin/bash
+# Modpack installer egg script.
+# Runs in ghcr.io/pterodactyl/installers:debian with /mnt/server as the volume.
+# Inputs: MODPACK_PROVIDER, MODPACK_ID, MODPACK_VERSION, WIPE_EXISTING
+
+set -euo pipefail
+
+apt-get update -qq
+apt-get install -y -qq curl jq unzip openjdk-21-jre-headless >/dev/null
+
+cd /mnt/server
+WORK=$(mktemp -d)
+
+if [ "${WIPE_EXISTING:-1}" = "1" ]; then
+    echo "Clearing previous installation (worlds preserved)..."
+    find . -mindepth 1 -maxdepth 1 \
+        ! -name 'world' ! -name 'world_nether' ! -name 'world_the_end' \
+        ! -name 'server.properties' ! -name 'ops.json' ! -name 'whitelist.json' \
+        -exec rm -rf {} +
+fi
+
+# ---------------------------------------------------------------------------
+# Loader installation. Shared by every provider once we know mc + loader ver.
+# ---------------------------------------------------------------------------
+install_loader() {
+    local loader="$1" mc="$2" ver="$3"
+    echo "Installing ${loader} ${ver} for Minecraft ${mc}..."
+
+    case "$loader" in
+        forge)
+            curl -fsSL -o installer.jar \
+                "https://maven.minecraftforge.net/net/minecraftforge/forge/${mc}-${ver}/forge-${mc}-${ver}-installer.jar"
+            java -jar installer.jar --installServer && rm -f installer.jar
+            ;;
+        neoforge)
+            curl -fsSL -o installer.jar \
+                "https://maven.neoforged.net/releases/net/neoforged/neoforge/${ver}/neoforge-${ver}-installer.jar"
+            java -jar installer.jar --installServer && rm -f installer.jar
+            ;;
+        fabric)
+            curl -fsSL -o server.jar \
+                "https://meta.fabricmc.net/v2/versions/loader/${mc}/${ver}/stable/server/jar"
+            ;;
+        quilt)
+            echo "Quilt not implemented yet." >&2; exit 1
+            ;;
+        *)
+            echo "Unknown loader: ${loader}" >&2; exit 1
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Modrinth: .mrpack is a zip containing modrinth.index.json + overrides/
+# ---------------------------------------------------------------------------
+install_modrinth() {
+    local url
+    url=$(curl -fsSL -A "pterodactyl-modpacks/0.1.0" \
+        "https://api.modrinth.com/v2/version/${MODPACK_VERSION}" \
+        | jq -r '.files[] | select(.primary == true) | .url')
+
+    echo "Downloading modpack..."
+    curl -fsSL -o "${WORK}/pack.mrpack" "$url"
+    unzip -q "${WORK}/pack.mrpack" -d "${WORK}/pack"
+
+    local index="${WORK}/pack/modrinth.index.json"
+    local mc; mc=$(jq -r '.dependencies.minecraft' "$index")
+
+    # Exactly one of these is present in a valid pack.
+    for l in forge neoforge fabric-loader quilt-loader; do
+        local v; v=$(jq -r --arg k "$l" '.dependencies[$k] // empty' "$index")
+        if [ -n "$v" ]; then
+            install_loader "${l%-loader}" "$mc" "$v"
+            break
+        fi
+    done
+
+    # Skip client-only files. env.server == "unsupported" means don't install.
+    echo "Downloading mods..."
+    jq -r '.files[] | select((.env.server // "required") != "unsupported")
+           | [.path, .downloads[0]] | @tsv' "$index" \
+    | while IFS=$'\t' read -r path dl; do
+        mkdir -p "$(dirname "$path")"
+        curl -fsSL -o "$path" "$dl" || echo "WARN: failed ${path}" >&2
+    done
+
+    # server-overrides wins over overrides where both define a file.
+    [ -d "${WORK}/pack/overrides" ] && cp -rf "${WORK}/pack/overrides/." .
+    [ -d "${WORK}/pack/server-overrides" ] && cp -rf "${WORK}/pack/server-overrides/." .
+    true
+}
+
+# ---------------------------------------------------------------------------
+# CurseForge: prefer the publisher's server pack; fall back to the manifest.
+# ---------------------------------------------------------------------------
+install_curseforge() {
+    local api="https://api.curseforge.com/v1"
+    local hdr="x-api-key: ${CURSEFORGE_API_KEY}"
+
+    local file; file=$(curl -fsSL -H "$hdr" "${api}/mods/${MODPACK_ID}/files/${MODPACK_VERSION}")
+    local serverPack; serverPack=$(echo "$file" | jq -r '.data.serverPackFileId // empty')
+
+    if [ -n "$serverPack" ]; then
+        echo "Using publisher server pack..."
+        local url; url=$(curl -fsSL -H "$hdr" \
+            "${api}/mods/${MODPACK_ID}/files/${serverPack}/download-url" | jq -r '.data')
+        curl -fsSL -o "${WORK}/server.zip" "$url"
+        unzip -q -o "${WORK}/server.zip" -d .
+        return
+    fi
+
+    echo "No server pack published; building from client manifest..."
+    local url; url=$(curl -fsSL -H "$hdr" \
+        "${api}/mods/${MODPACK_ID}/files/${MODPACK_VERSION}/download-url" | jq -r '.data')
+    curl -fsSL -o "${WORK}/pack.zip" "$url"
+    unzip -q "${WORK}/pack.zip" -d "${WORK}/pack"
+
+    local mf="${WORK}/pack/manifest.json"
+    local mc; mc=$(jq -r '.minecraft.version' "$mf")
+    local loaderId; loaderId=$(jq -r '.minecraft.modLoaders[] | select(.primary) | .id' "$mf")
+    install_loader "${loaderId%%-*}" "$mc" "${loaderId#*-}"
+
+    mkdir -p mods
+    jq -r '.files[] | [.projectID, .fileID] | @tsv' "$mf" \
+    | while IFS=$'\t' read -r project fileid; do
+        # Authors can opt out of third-party distribution. Those return no URL
+        # and legally cannot be fetched another way — report and continue.
+        local dl
+        dl=$(curl -fsSL -H "$hdr" "${api}/mods/${project}/files/${fileid}/download-url" | jq -r '.data // empty')
+        if [ -z "$dl" ] || [ "$dl" = "null" ]; then
+            echo "BLOCKED: project ${project} disallows redistribution — add it manually." >&2
+            continue
+        fi
+        curl -fsSL -O --output-dir mods "$dl" || echo "WARN: failed ${project}" >&2
+    done
+
+    local ov; ov=$(jq -r '.overrides // "overrides"' "$mf")
+    [ -d "${WORK}/pack/${ov}" ] && cp -rf "${WORK}/pack/${ov}/." .
+    true
+}
+
+case "$MODPACK_PROVIDER" in
+    modrinth)   install_modrinth ;;
+    curseforge) install_curseforge ;;
+    *) echo "Provider ${MODPACK_PROVIDER} not implemented." >&2; exit 1 ;;
+esac
+
+echo "eula=true" > eula.txt
+
+# ---------------------------------------------------------------------------
+# Write the startup command. Every loader boots differently, and the egg's
+# startup line is fixed at "bash start.sh" precisely so this script can decide.
+# ---------------------------------------------------------------------------
+MEM="${SERVER_MEMORY:-2048}"
+
+if [ -f run.sh ]; then
+    # Forge 1.17+ and NeoForge ship their own run.sh plus user_jvm_args.txt.
+    echo "-Xms128M -Xmx${MEM}M" > user_jvm_args.txt
+    printf '#!/bin/bash\nexec ./run.sh nogui\n' > start.sh
+
+elif ls libraries/net/minecraftforge/forge/*/unix_args.txt >/dev/null 2>&1; then
+    ARGS=$(ls libraries/net/minecraftforge/forge/*/unix_args.txt | head -n1)
+    printf '#!/bin/bash\nexec java -Xms128M -Xmx%sM @%s nogui\n' "$MEM" "$ARGS" > start.sh
+
+elif ls libraries/net/neoforged/neoforge/*/unix_args.txt >/dev/null 2>&1; then
+    ARGS=$(ls libraries/net/neoforged/neoforge/*/unix_args.txt | head -n1)
+    printf '#!/bin/bash\nexec java -Xms128M -Xmx%sM @%s nogui\n' "$MEM" "$ARGS" > start.sh
+
+else
+    # Fabric, Quilt, old Forge, and publisher server packs: a plain jar.
+    JAR=$(ls -S ./*.jar 2>/dev/null | grep -viE 'installer|sources' | head -n1)
+    JAR=${JAR:-server.jar}
+    printf '#!/bin/bash\nexec java -Xms128M -Xmx%sM -jar %s nogui\n' "$MEM" "$JAR" > start.sh
+fi
+
+chmod +x start.sh run.sh 2>/dev/null || true
+rm -rf "$WORK"
+
+echo "Modpack installed. Startup command written to start.sh."

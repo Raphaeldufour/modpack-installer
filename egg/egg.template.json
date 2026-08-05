@@ -1,0 +1,88 @@
+{
+    "_comment": "Modpack installer egg. Servers are switched onto this egg by the Modpacks Blueprint extension.",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-05T00:00:00+00:00",
+    "name": "Modpack Installer",
+    "author": "you@example.com",
+    "description": "Installs Minecraft modpacks from Modrinth and CurseForge. Driven by the Modpacks extension; not intended to be picked manually.",
+    "features": [
+        "eula",
+        "java_version",
+        "pid_limit"
+    ],
+    "docker_images": {
+        "Java 21": "ghcr.io/pterodactyl/yolks:java_21",
+        "Java 17": "ghcr.io/pterodactyl/yolks:java_17",
+        "Java 8": "ghcr.io/pterodactyl/yolks:java_8"
+    },
+    "file_denylist": [],
+    "startup": "bash start.sh",
+    "config": {
+        "files": "{\"server.properties\": {\"parser\": \"properties\", \"find\": {\"server-ip\": \"0.0.0.0\", \"server-port\": \"{{server.build.default.port}}\"}}}",
+        "startup": "{\"done\": \")! For help, type \"}",
+        "logs": "{}",
+        "stop": "stop"
+    },
+    "scripts": {
+        "installation": {
+            "script": "@@INSTALL_SH@@",
+            "container": "ghcr.io/pterodactyl/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Modpack Provider",
+            "description": "Which platform the pack comes from. Set by the Modpacks extension.",
+            "env_variable": "MODPACK_PROVIDER",
+            "default_value": "modrinth",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|string|in:modrinth,curseforge",
+            "field_type": "text"
+        },
+        {
+            "name": "Modpack ID",
+            "description": "Project ID or slug on the provider.",
+            "env_variable": "MODPACK_ID",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|string|max:120",
+            "field_type": "text"
+        },
+        {
+            "name": "Modpack Version",
+            "description": "Version or file ID to install.",
+            "env_variable": "MODPACK_VERSION",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|string|max:120",
+            "field_type": "text"
+        },
+        {
+            "name": "Wipe Existing Files",
+            "description": "Clear the server directory before installing. Worlds are always preserved.",
+            "env_variable": "WIPE_EXISTING",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "CurseForge API Key",
+            "description": "Required only for CurseForge packs. Hidden from users.",
+            "env_variable": "CURSEFORGE_API_KEY",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "nullable|string|max:200",
+            "field_type": "text"
+        }
+    ]
+}

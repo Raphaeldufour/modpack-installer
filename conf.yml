@@ -1,0 +1,28 @@
+info:
+  name: 'Modpacks'
+  identifier: 'modpacks'          # lowercase alphanumeric only — used everywhere as a namespace
+  description: 'Browse and install Minecraft modpacks without leaving the panel.'
+  version: '0.1.0'
+  target: '1.11.11'               # the Pterodactyl version you built + tested against
+  author: 'you'
+  icon: 'assets/icon.png'
+  website: ''
+
+admin:
+  view: 'admin/view.blade.php'    # where the host sets the CurseForge API key + installer egg id
+  controller: 'admin/AdminController.php'
+
+data:
+  directory: 'data'               # install.sh / update.sh / remove.sh live in here
+  public: 'public'
+
+dashboard:
+  components: 'Components.yml'
+
+requests:
+  app: 'app'                      # copied into the panel's app/ tree
+  routers:
+    client: 'routes/client.php'   # endpoints under the client API, session-authenticated
+
+database:
+  migrations: 'database/migrations'
