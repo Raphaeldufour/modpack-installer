@@ -1,6 +1,6 @@
 <?php
 
-namespace Pterodactyl\Services\Modpacks;
+namespace Pterodactyl\BlueprintFramework\Extensions\modpacks\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Pterodactyl\Services\Modpacks;
+namespace Pterodactyl\BlueprintFramework\Extensions\modpacks\Services;
 
 use Throwable;
 use Pterodactyl\Models\User;

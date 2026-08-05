@@ -17,16 +17,18 @@ panel, `blueprint -export` packages it into a distributable `.blueprint` file.
 ├── admin/
 │   ├── view.blade.php        # admin.view
 │   └── AdminController.php   # admin.controller
-├── app/                      # requests.app  -> merged into panel's app/
-│   ├── Http/Controllers/Extensions/modpacks/
+├── app/                      # requests.app -> symlinked to the panel as
+│   │                         # app/BlueprintFramework/Extensions/modpacks
+│   ├── Http/Controllers/
 │   │   └── ModpackController.php
-│   └── Services/Modpacks/
+│   └── Services/
 │       ├── Pack.php
 │       ├── Version.php
 │       ├── ProviderInterface.php
 │       ├── ModrinthProvider.php
 │       ├── CurseForgeProvider.php
 │       ├── ProviderRegistry.php
+│       ├── ModpackSettings.php
 │       └── ModpackInstallService.php
 ├── routes/
 │   └── client.php            # requests.routers.client

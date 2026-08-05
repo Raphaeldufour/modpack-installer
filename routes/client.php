@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Pterodactyl\Http\Controllers\Extensions\modpacks\ModpackController;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\ModpackController;
 use Pterodactyl\Http\Middleware\Api\Client\Server\AuthenticateServerAccess;
 
 /*

@@ -1,6 +1,6 @@
 <?php
 
-namespace Pterodactyl\Services\Modpacks;
+namespace Pterodactyl\BlueprintFramework\Extensions\modpacks\Services;
 
 /**
  * A modpack, normalised across providers.

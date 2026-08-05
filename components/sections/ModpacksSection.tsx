@@ -67,7 +67,7 @@ const ModpacksSection = () => {
     const [selected, setSelected] = useState<Pack | null>(null);
     const [versions, setVersions] = useState<Version[]>([]);
     const [loadingVersions, setLoadingVersions] = useState<boolean>(false);
-    const [version, setVersion] = useState<string>('');
+    const [versionId, setVersionId] = useState<string>('');
 
     const [wipe, setWipe] = useState<boolean>(true);
     const [confirming, setConfirming] = useState<boolean>(false);
@@ -125,7 +125,7 @@ const ModpacksSection = () => {
     useEffect(() => {
         if (!selected) {
             setVersions([]);
-            setVersion('');
+            setVersionId('');
             return;
         }
 
@@ -133,7 +133,7 @@ const ModpacksSection = () => {
 
         setLoadingVersions(true);
         setVersions([]);
-        setVersion('');
+        setVersionId('');
 
         http.get(`${base}/packs/${selected.id}/versions`, { params: { provider: selected.provider } })
             .then(({ data }) => {
@@ -141,7 +141,7 @@ const ModpacksSection = () => {
                 setVersions(data.data);
                 // Providers return newest first, so the top entry is the sane
                 // default and saves a click in the common case.
-                setVersion(data.data[0]?.id ?? '');
+                setVersionId(data.data[0]?.id ?? '');
             })
             .catch((e) => {
                 if (!stale) setError(httpErrorToHuman(e));
@@ -156,7 +156,7 @@ const ModpacksSection = () => {
     }, [base, selected]);
 
     const install = () => {
-        if (!selected || !version) return;
+        if (!selected || !versionId) return;
 
         setInstalling(true);
         setError(null);
@@ -165,7 +165,11 @@ const ModpacksSection = () => {
         http.post(`${base}/install`, {
             provider: selected.provider,
             pack: selected.id,
-            version,
+            // The API field is `version`; the local name only differs because
+            // `!{version}` is a Blueprint placeholder. Written unescaped in the
+            // JSX below it would be replaced by the extension version at build
+            // time, producing `value=0.1.0` and a syntax error.
+            version: versionId,
             wipe,
         })
             .then(() => {
@@ -182,7 +186,7 @@ const ModpacksSection = () => {
             .then(() => setInstalling(false));
     };
 
-    const selectedVersion = versions.find((v) => v.id === version) || null;
+    const selectedVersion = versions.find((v) => v.id === versionId) || null;
 
     return (
         <PageContentBlock title={'Modpacks'}>
@@ -302,8 +306,8 @@ const ModpacksSection = () => {
                                             <>
                                                 <div className={'flex flex-wrap items-center gap-3'}>
                                                     <select
-                                                        value={version}
-                                                        onChange={(e) => setVersion(e.currentTarget.value)}
+                                                        value={versionId}
+                                                        onChange={(e) => setVersionId(e.currentTarget.value)}
                                                         className={
                                                             'rounded border border-neutral-500 bg-neutral-600 p-2 ' +
                                                             'text-sm text-neutral-200'
@@ -330,7 +334,7 @@ const ModpacksSection = () => {
 
                                                     <button
                                                         type={'button'}
-                                                        disabled={!canInstall || !version || installing}
+                                                        disabled={!canInstall || !versionId || installing}
                                                         onClick={() => setConfirming(true)}
                                                         className={
                                                             'rounded bg-primary-500 px-4 py-2 text-sm text-primary-50 ' +

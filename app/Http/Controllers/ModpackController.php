@@ -1,6 +1,6 @@
 <?php
 
-namespace Pterodactyl\Http\Controllers\Extensions\modpacks;
+namespace Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers;
 
 use Throwable;
 use Illuminate\Http\Request;
@@ -10,9 +10,9 @@ use Pterodactyl\Models\Permission;
 use Illuminate\Support\Facades\Log;
 use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Exceptions\DisplayException;
-use Pterodactyl\Services\Modpacks\ProviderRegistry;
-use Pterodactyl\Services\Modpacks\ProviderInterface;
-use Pterodactyl\Services\Modpacks\ModpackInstallService;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\ProviderRegistry;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\ProviderInterface;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\ModpackInstallService;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**

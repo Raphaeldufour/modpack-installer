@@ -159,12 +159,20 @@ Contenu attendu à ce stade :
 ```
 .blueprint/dev/
 ├── conf.yml
+├── admin/          assets/         components/
+├── data/           database/       public/
+├── routes/client.php
 └── app/
-    └── Services/Modpacks/
-        ├── ProviderInterface.php
-        ├── ModrinthProvider.php
-        └── CurseForgeProvider.php
+    ├── Http/Controllers/ModpackController.php
+    └── Services/          (Pack, Version, providers, registry, settings, install service)
 ```
+
+> **Le namespace de `app/` n'est pas libre.** Blueprint symlinke `requests.app` vers
+> `app/BlueprintFramework/Extensions/modpacks` dans le panel, donc tout ce qui est ici
+> est namespacé `Pterodactyl\BlueprintFramework\Extensions\modpacks\…`. Avec n'importe
+> quelle autre racine, l'autoloading échoue et `route:list` signale la classe du
+> contrôleur comme introuvable. Blueprint expose la même chaîne via le placeholder
+> `{appcontext}`.
 
 ### B.3 Vérifier les bindings
 
@@ -454,6 +462,24 @@ Trois pièges, tous vérifiés contre le gabarit officiel « Working with compon
 2. Les valeurs de `Component:` sont relatives à ce dossier et **sans extension**.
 3. Toutes les valeurs sont des chaînes, `AdminOnly: "false"` compris.
 
+> **Piège majeur du JSX sous Blueprint.** Avant de compiler, Blueprint remplace ses
+> placeholders dans **tous** les fichiers de l'extension : `{identifier}`, `{name}`,
+> `{author}`, `{version}`, `{random}`, `{timestamp}`, `{mode}`, `{target}`, `{root}`,
+> `{webroot}`, `{viewcontext}`, `{appcontext}`, `{engine}`, `{fs}`, plus les formes
+> `{root/…}`, `{webroot/…}`, `{fs/private}` et `{is_target}`.
+>
+> Or JSX est fait d'accolades. Une variable React nommée `version` produit
+> `value={version}`, que Blueprint réécrit en `value=0.1.0` — et babel s'étrangle sur
+> `JSX value should be either an expression or a quoted JSX text`. C'est pourquoi
+> l'état s'appelle ici `versionId` et non `version`.
+>
+> Deux parades : renommer la variable, ou échapper avec `!` — `!{version}` produit le
+> texte littéral `{version}`. Détection avant build :
+>
+> ```bash
+> grep -rnE '(^|[^!])\{(identifier|name|author|version|random|timestamp|mode|target|root|webroot|viewcontext|appcontext|engine|fs|is_target)\}' components/ app/ admin/ routes/
+> ```
+
 L'onglet ne contient **aucun** branchement spécifique à un provider : il lit
 `/providers` et traite toutes les entrées de la même façon. C'est la contrepartie de
 la normalisation faite par `Pack` et `Version` côté PHP — ajouter un provider reste
@@ -493,6 +519,8 @@ Rien de bloquant. Restent des points de confort :
 | 404 sur les appels API de l'onglet | Le préfixe de route réel diffère de celui codé en dur. Vérifie avec `php artisan route:list \| grep modpacks`. |
 | `CurseForge is not configured` | Aucune clé enregistrée : **Admin → Extensions → Modpacks**. Si tu configures par fichier, `config/modpacks.php` est absent ou la config n'a pas été rechargée (`php artisan config:clear`). |
 | `The modpack installer egg has not been configured` | Aucun egg sélectionné sur la page admin, ou l'egg choisi a été supprimé depuis. |
+| `JSX value should be either an expression or a quoted JSX text` pendant `Rebuilding panel assets` | Un placeholder Blueprint a été substitué dans le JSX (`value={version}` → `value=0.1.0`). Renomme la variable ou échappe-la en `!{version}` (cf. [L'onglet React](#longlet-react)). Le build Blueprint affiche quand même `SUCCESS` : c'est la compilation des assets qui a échoué, pas l'installation. |
+| `Class "Pterodactyl\…\ModpackController" not found` | Le namespace de `app/` doit être `Pterodactyl\BlueprintFramework\Extensions\modpacks\…` — c'est là que Blueprint symlinke `requests.app`. |
 | La page admin renvoie une 500 | Le nom de classe `modpacksExtensionController` est dérivé de `info.identifier` par Blueprint. Compare avec le gabarit `2` (« Admin configuration ») de `blueprint -init` pour ta version. |
 | Le pack s'installe mais le serveur ne démarre pas | Regarde le log d'installation dans la console du serveur. Les lignes `BLOCKED:` signalent des mods dont l'auteur interdit la redistribution — il n'existe aucun contournement légal, il faut les ajouter à la main. Les lignes `WARN:` signalent un téléchargement échoué. |
 | Mods client-only qui crashent le serveur | Un `.mrpack` Modrinth est un manifeste, pas un pack serveur. Le filtre `env.server != "unsupported"` doit être appliqué, et `server-overrides/` copié **après** `overrides/`. |

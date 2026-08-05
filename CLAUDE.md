@@ -51,10 +51,21 @@ here must also be bound in `conf.yml` or the build silently ignores it.
 
 ## Conventions
 
-- PHP namespace is `Pterodactyl\Services\Modpacks` and
-  `Pterodactyl\Http\Controllers\Extensions\modpacks`. One class per file,
-  PSR-4. The lowercase `modpacks` in the controller namespace matches
-  `info.identifier` and is not a typo.
+- Everything under `app/` is namespaced
+  `Pterodactyl\BlueprintFramework\Extensions\modpacks\…`, because that is where
+  Blueprint symlinks `requests.app` — `app/BlueprintFramework/Extensions/<identifier>`.
+  It is not a free choice: any other root fails to autoload, with `route:list`
+  reporting the controller class as not found. Blueprint exposes the same string
+  as the `{appcontext}` placeholder. The lowercase `modpacks` segment is the
+  identifier and is not a typo. One class per file, PSR-4.
+- **No Blueprint placeholder may appear literally in any shipped file.**
+  `{identifier}`, `{name}`, `{author}`, `{version}`, `{random}`, `{timestamp}`,
+  `{mode}`, `{target}`, `{root}`, `{webroot}`, `{viewcontext}`, `{appcontext}`,
+  `{engine}`, `{fs}` and the `{root/…}`, `{webroot/…}`, `{fs/private}`,
+  `{is_target}` forms are substituted across every file before the build. JSX is
+  made of braces, so this bites the React tab hardest: `value={version}` was
+  rewritten to `value=0.1.0` and failed to parse. Rename the binding, or write
+  `!{version}` to escape it.
 - Providers normalise everything to `Pack` and `Version`. The frontend must
   never contain provider-specific branching. Adding a provider means one new
   class implementing `ProviderInterface` plus a line in `ProviderRegistry`.

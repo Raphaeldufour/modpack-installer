@@ -35,8 +35,9 @@ separately by an admin and is not shipped with the extension.
 
 ```
 conf.yml                              # extension manifest (see STRUCTURE.md)
-app/Services/Modpacks/                # Pack, Version, providers, registry, install service
-app/Http/Controllers/Extensions/modpacks/ModpackController.php
+app/Services/                         # Pack, Version, providers, registry, settings, install service
+app/Http/Controllers/ModpackController.php
+                                      # both namespaced Pterodactyl\BlueprintFramework\Extensions\modpacks\…
 routes/client.php                     # client API endpoints — requests.routers.client
 components/Components.yml             # dashboard.components points at the DIRECTORY
 components/sections/ModpacksSection.tsx   # the tab itself
