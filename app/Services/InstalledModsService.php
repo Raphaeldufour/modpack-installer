@@ -6,17 +6,15 @@ use Throwable;
 use Pterodactyl\Models\Server;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Cache;
 use Pterodactyl\Repositories\Wings\DaemonFileRepository;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 
 class InstalledModsService
 {
     private const STATE_FILE = '.modpacks-mods-state.json';
+    private const STATE_VERSION = 2;
     private const MAX_HASH_BYTES = 67108864;
-    private const MAX_UNCACHED_PER_SCAN = 2;
-    private const MAX_SCAN_SECONDS = 12.0;
-    private const LOOKUP_TIMEOUT = 4;
+    private const LOOKUP_TIMEOUT = 10;
     private const CURSEFORGE_GAME_MINECRAFT = 432;
 
     public function __construct(
@@ -32,41 +30,41 @@ class InstalledModsService
         $entries = $this->modEntries($repository);
         $state = $this->readState($repository);
         $nextState = [];
-        $mods = [];
-        $started = microtime(true);
-        $scanned = 0;
+        $modsByPath = [];
+        $pending = [];
 
         foreach ($entries as $entry) {
             $path = 'mods/' . $entry['name'];
             $signature = $this->signature($entry);
             $cached = $state[$path] ?? null;
 
-            if (is_array($cached) && ($cached['signature'] ?? null) === $signature) {
-                $mods[] = $cached['mod'];
+            if (is_array($cached) && ($cached['signature'] ?? null) === $signature && $this->isReusable($cached)) {
+                $modsByPath[$path] = $cached['mod'];
                 $nextState[$path] = $cached;
                 continue;
             }
 
-            if ($scanned >= self::MAX_UNCACHED_PER_SCAN || microtime(true) - $started >= self::MAX_SCAN_SECONDS) {
-                $mods[] = $this->pending($path, $entry);
-                continue;
-            }
+            $pending[] = ['path' => $path, 'entry' => $entry, 'signature' => $signature];
+        }
 
-            $mod = $this->identify($repository, $path, $entry);
-            $mods[] = $mod;
+        foreach ($this->identifyMany($repository, $pending) as $path => $mod) {
+            $modsByPath[$path] = $mod;
             $nextState[$path] = [
-                'signature' => $signature,
-                'mod' => $mod,
+                'version' => self::STATE_VERSION,
+                'signature' => $mod['_signature'],
+                'mod' => $this->withoutInternalKeys($mod),
             ];
-            $scanned++;
         }
 
         $this->writeState($repository, $nextState);
 
-        return $mods;
+        return array_values(array_map(
+            fn (array $entry) => $this->withoutInternalKeys($modsByPath['mods/' . $entry['name']]),
+            $entries,
+        ));
     }
 
-    private function pending(string $path, array $entry): array
+    private function baseMod(string $path, array $entry, string $reason): array
     {
         return [
             'path' => $path,
@@ -78,8 +76,85 @@ class InstalledModsService
             'icon_url' => null,
             'size' => $entry['size'] ?? null,
             'recognized' => false,
-            'reason' => 'pending_scan',
+            'reason' => $reason,
         ];
+    }
+
+    /** @param array<int, array{path: string, entry: array, signature: string}> $pending */
+    private function identifyMany(DaemonFileRepository $repository, array $pending): array
+    {
+        $hashed = [];
+        $mods = [];
+
+        foreach ($pending as $item) {
+            $path = $item['path'];
+            $entry = $item['entry'];
+
+            if (($entry['size'] ?? 0) > self::MAX_HASH_BYTES) {
+                $mods[$path] = $this->baseMod($path, $entry, 'too_large') + ['_signature' => $item['signature']];
+                continue;
+            }
+
+            try {
+                $contents = $repository->getContent('/' . $path);
+            } catch (DaemonConnectionException $exception) {
+                Log::notice('modpacks: installed mod could not be read for fingerprinting', [
+                    'path' => $path,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                $mods[$path] = $this->baseMod($path, $entry, 'unreadable') + ['_signature' => $item['signature']];
+                continue;
+            }
+
+            $hashed[$path] = [
+                'entry' => $entry,
+                'signature' => $item['signature'],
+                'sha1' => sha1($contents),
+                'fingerprint' => $this->curseForgeFingerprint($contents),
+            ];
+            unset($contents);
+        }
+
+        $modrinth = $this->identifyModrinthMany(array_column($hashed, 'sha1'));
+        $curseforge = $this->identifyCurseForgeMany(array_column($hashed, 'fingerprint'));
+
+        foreach ($hashed as $path => $item) {
+            $mod = $modrinth[$item['sha1']] ?? $curseforge[$item['fingerprint']] ?? null;
+
+            if ($mod === null) {
+                $mod = $this->baseMod($path, $item['entry'], 'unknown') + [
+                    'sha1' => $item['sha1'],
+                    'fingerprint' => $item['fingerprint'],
+                ];
+            } else {
+                $mod = $mod + [
+                    'path' => $path,
+                    'size' => $item['entry']['size'] ?? null,
+                    'recognized' => true,
+                ];
+            }
+
+            $mods[$path] = $mod + ['_signature' => $item['signature']];
+        }
+
+        return $mods;
+    }
+
+    private function withoutInternalKeys(array $mod): array
+    {
+        unset($mod['_signature']);
+
+        return $mod;
+    }
+
+    private function isReusable(array $cached): bool
+    {
+        $mod = $cached['mod'] ?? null;
+
+        return ($cached['version'] ?? null) === self::STATE_VERSION
+            && is_array($mod)
+            && ($mod['reason'] ?? null) !== 'pending_scan';
     }
 
     /** @return array<int, array{name: string, size: int|null, modified: string|null}> */
@@ -122,149 +197,112 @@ class InstalledModsService
         return true;
     }
 
-    private function identify(DaemonFileRepository $repository, string $path, array $entry): array
+    /** @param string[] $sha1s */
+    private function identifyModrinthMany(array $sha1s): array
     {
-        $base = [
-            'path' => $path,
-            'provider' => null,
-            'project_id' => null,
-            'project_name' => pathinfo($entry['name'], PATHINFO_FILENAME),
-            'version_id' => null,
-            'version_name' => $entry['name'],
-            'icon_url' => null,
-            'size' => $entry['size'] ?? null,
-            'recognized' => false,
-        ];
+        $sha1s = array_values(array_unique(array_filter($sha1s)));
 
-        if (($entry['size'] ?? 0) > self::MAX_HASH_BYTES) {
-            return $base + ['reason' => 'too_large'];
+        if ($sha1s === []) {
+            return [];
         }
 
         try {
-            $contents = $repository->getContent('/' . $path);
-        } catch (DaemonConnectionException $exception) {
-            Log::notice('modpacks: installed mod could not be read for fingerprinting', [
-                'path' => $path,
+            $versions = Http::withHeaders([
+                'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
+            ])
+                ->timeout(self::LOOKUP_TIMEOUT)
+                ->post('https://api.modrinth.com/v2/version_files', [
+                    'hashes' => $sha1s,
+                    'algorithm' => 'sha1',
+                ])
+                ->throw()
+                ->json();
+        } catch (Throwable $exception) {
+            Log::debug('modpacks: bulk Modrinth mod lookup failed', [
                 'message' => $exception->getMessage(),
             ]);
 
-            return $base + ['reason' => 'unreadable'];
-        }
-
-        $sha1 = sha1($contents);
-        $murmur = $this->curseForgeFingerprint($contents);
-        unset($contents);
-
-        $identified = $this->identifyModrinth($path, $sha1)
-            ?? $this->identifyCurseForge($path, $murmur);
-
-        if ($identified !== null) {
-            return $identified + ['size' => $entry['size'] ?? null, 'recognized' => true];
-        }
-
-        return $base + [
-            'reason' => 'unknown',
-            'sha1' => $sha1,
-            'fingerprint' => $murmur,
-        ];
-    }
-
-    private function identifyModrinth(string $path, string $sha1): ?array
-    {
-        try {
-            $version = Cache::remember("modpacks:mods:installed:modrinth:$sha1", 86400, fn () => Http::withHeaders([
-                'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
-            ])
-                ->timeout(self::LOOKUP_TIMEOUT)
-                ->get("https://api.modrinth.com/v2/version_file/{$sha1}", ['algorithm' => 'sha1'])
-                ->throw()
-                ->json());
-        } catch (Throwable $exception) {
-            return null;
-        }
-
-        $projectId = $version['project_id'] ?? null;
-        if (!is_string($projectId) || $projectId === '') {
-            return null;
-        }
-
-        $project = $this->modrinthProject($projectId);
-
-        return [
-            'path' => $path,
-            'provider' => 'modrinth',
-            'project_id' => $projectId,
-            'project_name' => $project['title'] ?? $projectId,
-            'version_id' => $version['id'] ?? null,
-            'version_name' => $version['version_number'] ?? $version['name'] ?? basename($path),
-            'icon_url' => $project['icon_url'] ?? null,
-        ];
-    }
-
-    private function modrinthProject(string $projectId): array
-    {
-        try {
-            return Cache::remember("modpacks:mods:installed:modrinth:project:$projectId", 86400, fn () => Http::withHeaders([
-                'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
-            ])
-                ->timeout(self::LOOKUP_TIMEOUT)
-                ->get("https://api.modrinth.com/v2/project/{$projectId}")
-                ->throw()
-                ->json());
-        } catch (Throwable $exception) {
             return [];
         }
+
+        if (!is_array($versions)) {
+            return [];
+        }
+
+        $projectIds = [];
+        foreach ($versions as $version) {
+            if (is_array($version) && !empty($version['project_id'])) {
+                $projectIds[] = $version['project_id'];
+            }
+        }
+
+        $projects = $this->modrinthProjects($projectIds);
+        $mods = [];
+
+        foreach ($versions as $sha1 => $version) {
+            if (!is_array($version)) {
+                continue;
+            }
+
+            $projectId = $version['project_id'] ?? null;
+            if (!is_string($projectId) || $projectId === '') {
+                continue;
+            }
+
+            $project = $projects[$projectId] ?? [];
+
+            $mods[$sha1] = [
+                'provider' => 'modrinth',
+                'project_id' => $projectId,
+                'project_name' => $project['title'] ?? $projectId,
+                'version_id' => $version['id'] ?? null,
+                'version_name' => $version['version_number'] ?? $version['name'] ?? $sha1,
+                'icon_url' => $project['icon_url'] ?? null,
+            ];
+        }
+
+        return $mods;
     }
 
-    private function identifyCurseForge(string $path, int $fingerprint): ?array
+    /** @param string[] $projectIds */
+    private function modrinthProjects(array $projectIds): array
     {
-        $key = $this->settings->curseForgeApiKey();
+        $projectIds = array_values(array_unique(array_filter($projectIds)));
 
-        if (empty($key)) {
-            return null;
+        if ($projectIds === []) {
+            return [];
         }
 
         try {
-            $match = Cache::remember("modpacks:mods:installed:curseforge:$fingerprint", 86400, function () use ($key, $fingerprint) {
-                $response = Http::withHeaders(['x-api-key' => $key])
-                    ->timeout(self::LOOKUP_TIMEOUT)
-                    ->post('https://api.curseforge.com/v1/fingerprints/' . self::CURSEFORGE_GAME_MINECRAFT, [
-                        'fingerprints' => [$fingerprint],
-                    ])
-                    ->throw()
-                    ->json();
-
-                return $response['data']['exactMatches'][0] ?? null;
-            });
+            $projects = Http::withHeaders([
+                'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
+            ])
+                ->timeout(self::LOOKUP_TIMEOUT)
+                ->get('https://api.modrinth.com/v2/projects', [
+                    'ids' => json_encode($projectIds),
+                ])
+                ->throw()
+                ->json();
         } catch (Throwable $exception) {
-            return null;
+            Log::debug('modpacks: bulk Modrinth project lookup failed', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [];
         }
 
-        if (!is_array($match)) {
-            return null;
+        $byId = [];
+        foreach ($projects ?? [] as $project) {
+            if (is_array($project) && !empty($project['id'])) {
+                $byId[$project['id']] = $project;
+            }
         }
 
-        $file = $match['file'] ?? [];
-        $projectId = (string) ($file['modId'] ?? $match['id'] ?? '');
-
-        if ($projectId === '') {
-            return null;
-        }
-
-        $project = $this->curseForgeProject($projectId);
-
-        return [
-            'path' => $path,
-            'provider' => 'curseforge',
-            'project_id' => $projectId,
-            'project_name' => $project['name'] ?? $projectId,
-            'version_id' => isset($file['id']) ? (string) $file['id'] : null,
-            'version_name' => $file['displayName'] ?? $file['fileName'] ?? basename($path),
-            'icon_url' => $project['logo']['thumbnailUrl'] ?? null,
-        ];
+        return $byId;
     }
 
-    private function curseForgeProject(string $projectId): array
+    /** @param int[] $fingerprints */
+    private function identifyCurseForgeMany(array $fingerprints): array
     {
         $key = $this->settings->curseForgeApiKey();
 
@@ -272,17 +310,107 @@ class InstalledModsService
             return [];
         }
 
-        try {
-            return Cache::remember("modpacks:mods:installed:curseforge:project:$projectId", 86400, fn () => Http::withHeaders([
-                'x-api-key' => $key,
-            ])
-                ->timeout(self::LOOKUP_TIMEOUT)
-                ->get("https://api.curseforge.com/v1/mods/{$projectId}")
-                ->throw()
-                ->json()['data'] ?? []);
-        } catch (Throwable $exception) {
+        $fingerprints = array_values(array_unique(array_filter($fingerprints, fn ($fingerprint) => is_int($fingerprint))));
+
+        if ($fingerprints === []) {
             return [];
         }
+
+        try {
+            $response = Http::withHeaders(['x-api-key' => $key])
+                ->timeout(self::LOOKUP_TIMEOUT)
+                ->post('https://api.curseforge.com/v1/fingerprints/' . self::CURSEFORGE_GAME_MINECRAFT, [
+                    'fingerprints' => $fingerprints,
+                ])
+                ->throw()
+                ->json();
+        } catch (Throwable $exception) {
+            Log::debug('modpacks: bulk CurseForge fingerprint lookup failed', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        $matches = $response['data']['exactMatches'] ?? [];
+        $projectIds = [];
+        foreach ($matches as $match) {
+            $file = $match['file'] ?? [];
+            if (!empty($file['modId'])) {
+                $projectIds[] = (string) $file['modId'];
+            }
+        }
+
+        $projects = $this->curseForgeProjects($projectIds);
+        $mods = [];
+
+        foreach ($matches as $match) {
+            if (!is_array($match)) {
+                continue;
+            }
+
+            $file = $match['file'] ?? [];
+            $projectId = (string) ($file['modId'] ?? '');
+            $fingerprint = $file['fileFingerprint'] ?? $match['fileFingerprint'] ?? null;
+
+            if ($projectId === '' || $fingerprint === null) {
+                continue;
+            }
+
+            $project = $projects[$projectId] ?? [];
+
+            $mods[(int) $fingerprint] = [
+                'provider' => 'curseforge',
+                'project_id' => $projectId,
+                'project_name' => $project['name'] ?? $projectId,
+                'version_id' => isset($file['id']) ? (string) $file['id'] : null,
+                'version_name' => $file['displayName'] ?? $file['fileName'] ?? (string) $fingerprint,
+                'icon_url' => $project['logo']['thumbnailUrl'] ?? null,
+            ];
+        }
+
+        return $mods;
+    }
+
+    /** @param string[] $projectIds */
+    private function curseForgeProjects(array $projectIds): array
+    {
+        $key = $this->settings->curseForgeApiKey();
+
+        if (empty($key)) {
+            return [];
+        }
+
+        $projectIds = array_values(array_unique(array_filter($projectIds)));
+
+        if ($projectIds === []) {
+            return [];
+        }
+
+        try {
+            $projects = Http::withHeaders(['x-api-key' => $key])
+                ->timeout(self::LOOKUP_TIMEOUT)
+                ->post('https://api.curseforge.com/v1/mods', [
+                    'modIds' => array_map('intval', $projectIds),
+                ])
+                ->throw()
+                ->json()['data'] ?? [];
+        } catch (Throwable $exception) {
+            Log::debug('modpacks: bulk CurseForge project lookup failed', [
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        $byId = [];
+        foreach ($projects as $project) {
+            if (is_array($project) && isset($project['id'])) {
+                $byId[(string) $project['id']] = $project;
+            }
+        }
+
+        return $byId;
     }
 
     private function curseForgeFingerprint(string $contents): int
