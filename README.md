@@ -41,6 +41,9 @@ routes/client.php                     # client API endpoints — requests.router
 components/Components.yml             # dashboard.components points at the DIRECTORY
 components/sections/ModpacksSection.tsx   # the tab itself
 admin/                                # admin.view + admin.controller — CF key, egg picker
+assets/icon.png                       # info.icon
+data/*.sh                             # extension lifecycle hooks (not the egg's)
+public/ database/migrations/          # bound but empty; settings live in the panel's table
 egg/install.sh                        # source of truth for the egg script
 egg/egg.template.json                 # egg metadata; script slot is a placeholder
 egg/build_egg.py                      # install.sh + template -> modpack-installer.json
@@ -50,15 +53,15 @@ INSTALL.md STRUCTURE.md CLAUDE.md     # docs, not deployed
 
 ## Getting it running
 
-**[`INSTALL.md`](INSTALL.md) is the step-by-step tutorial** (in French), including
-the missing `conf.yml` bindings that currently break the build. The short version:
+**[`INSTALL.md`](INSTALL.md) is the step-by-step tutorial** (in French). The short
+version:
 
 1. Install Blueprint on a **test** panel. Never develop against production.
 2. Turn on developer mode at `/admin/extensions` → Blueprint → `developer: true`.
 3. `blueprint -init`, pick a template, then drop this repository (minus `egg/`)
    into `/var/www/pterodactyl/.blueprint/dev/`.
-4. Create the files bound in `conf.yml` that don't exist yet, or blank those
-   bindings — `-build` aborts otherwise. See `INSTALL.md` §B.3.
+4. Check every path bound in `conf.yml` survived the copy — `-build` aborts
+   without saying which one is missing. See `INSTALL.md` §B.3.
 5. Import `egg/modpack-installer.json` in the admin area.
 6. `blueprint -build`, then hard-refresh the panel.
 7. Set the CurseForge key and pick the installer egg at

@@ -13,14 +13,14 @@ Ce document couvre les deux sens de « installer le blueprint » :
 > Blueprint — **jamais** sur un panel de production. C'est aussi la règle posée dans
 > [`CLAUDE.md`](CLAUDE.md).
 
-> **État actuel du dépôt.** Backend **et** frontend sont écrits : providers, DTO,
-> registre, service d'installation, contrôleur, routes, `components/Components.yml`
-> et l'onglet React. Ce qui reste relève du confort, pas du fonctionnement — voir
-> [« Ce qui manque encore »](#ce-qui-manque-encore).
+> **État actuel du dépôt.** L'extension est complète : providers, DTO, registre,
+> service d'installation, contrôleur, routes, onglet React, page admin, egg, et tous
+> les chemins déclarés dans [`conf.yml`](conf.yml) existent — `blueprint -build` a de
+> quoi aboutir sans rien créer au préalable.
 >
-> `blueprint -build` **échouera tel quel** : plusieurs chemins déclarés dans
-> [`conf.yml`](conf.yml) n'existent pas encore. L'[étape B.3](#b3-régler-les-bindings-manquants-obligatoire)
-> explique exactement quoi faire.
+> Ce qui n'a pas pu être vérifié sans panel : les signatures internes de Pterodactyl
+> et le préfixe réel des routes client. Voir [« Ce qui manque encore »](#ce-qui-manque-encore)
+> et le [dépannage](#dépannage).
 
 ---
 
@@ -166,90 +166,55 @@ Contenu attendu à ce stade :
         └── CurseForgeProvider.php
 ```
 
-### B.3 Régler les bindings manquants (obligatoire)
+### B.3 Vérifier les bindings
 
-**C'est ici que ça casse si tu sautes l'étape.** La règle Blueprint est absolue :
-tout chemin déclaré dans `conf.yml` doit exister, sinon le build s'interrompt sur
+Rien à créer : tous les chemins déclarés dans `conf.yml` existent dans le dépôt.
+Cette étape est une vérification, pas une correction.
+
+La règle Blueprint est absolue : tout chemin déclaré dans `conf.yml` doit exister,
+sinon le build s'interrompt sur
 
 ```
 FATAL: Extension configuration points towards one or more files that do not exist
 ```
 
-…sans jamais dire *lequel*. Voici l'état réel des bindings de ce dépôt :
+…sans jamais dire *lequel*. D'où l'intérêt de contrôler avant de builder :
 
-| Binding dans `conf.yml` | Chemin | Présent ? |
+| Binding dans `conf.yml` | Chemin | Rôle |
 |---|---|---|
-| — (racine) | `conf.yml` | ✅ |
-| `requests.app` | `app/` | ✅ |
-| `requests.routers.client` | `routes/client.php` | ✅ |
-| `dashboard.components` | `components/` | ✅ |
-| `admin.view` | `admin/view.blade.php` | ✅ |
-| `admin.controller` | `admin/AdminController.php` | ✅ |
-| `info.icon` | `assets/icon.png` | ❌ |
-| `data.directory` | `data/` | ❌ |
-| `data.public` | `public/` | ❌ |
-| `database.migrations` | `database/migrations/` | ❌ |
+| — (racine) | `conf.yml` | Manifeste |
+| `info.icon` | `assets/icon.png` | Icône de l'extension |
+| `admin.view` | `admin/view.blade.php` | Page admin |
+| `admin.controller` | `admin/AdminController.php` | Contrôleur admin |
+| `dashboard.components` | `components/` | Dossier des composants React |
+| `requests.app` | `app/` | Fusionné dans l'arbre `app/` du panel |
+| `requests.routers.client` | `routes/client.php` | Endpoints de l'API client |
+| `data.directory` | `data/` | Hooks de cycle de vie de l'extension |
+| `data.public` | `public/` | Servi sur `/extensions/modpacks/…` (vide) |
+| `database.migrations` | `database/migrations/` | Vide : la config vit dans la table `settings` |
 
-Deux chemins possibles.
-
-#### Option 1 — créer des stubs (recommandé : garde `conf.yml` intact)
+Contrôle rapide depuis le dossier dev, avant de builder :
 
 ```bash
-DEV=/var/www/pterodactyl/.blueprint/dev
-cd "$DEV"
+cd /var/www/pterodactyl/.blueprint/dev
 
-mkdir -p assets data public database/migrations
-
-# Icône : n'importe quel PNG fait l'affaire pour un build de test
-curl -fsSL -o assets/icon.png https://dummyimage.com/64x64/2d2d2d/ffffff.png
-
-# Scripts d'extension (ils tournent à l'installation de l'extension,
-# ils n'ont RIEN à voir avec l'installation d'un modpack)
-for f in install update remove export; do
-  printf '#!/bin/bash\n# %s.sh — extension lifecycle hook, no-op for now.\nexit 0\n' "$f" > "data/$f.sh"
+for p in assets/icon.png admin/view.blade.php admin/AdminController.php \
+         components components/Components.yml app routes/client.php \
+         data public database/migrations; do
+  [ -e "$p" ] && echo "ok   $p" || echo "MISSING $p"
 done
-
-touch public/.gitkeep database/migrations/.gitkeep
-
-chown -R www-data:www-data "$DEV"
 ```
 
-> `admin/` n'est plus à créer : la page admin existe. Son nom de classe
-> (`modpacksExtensionController`) est dérivé de `info.identifier` par Blueprint, comme
-> dans son gabarit officiel. Si la page renvoie une 500 au chargement, c'est la
-> première chose à comparer avec le gabarit de *ta* version.
+> **Si le `FATAL` tombe malgré tout**, bissecte : vide toutes les valeurs de `conf.yml`
+> (`icon: ''`, `view: ''`, `components: ''`…), build, puis remets-les une par une
+> jusqu'à ce que ça repète. Le binding fautif est celui que tu viens de remettre.
+> Une valeur vide est ignorée par le build — c'est ce que fait le gabarit officiel
+> pour les sections qu'il n'utilise pas.
 
-#### Option 2 — retirer les bindings
-
-Plus rapide pour un premier build, mais tu perds la page admin et l'onglet. Édite
-`$DEV/conf.yml` et vide les valeurs concernées :
-
-```yaml
-info:
-  icon: ''
-
-admin:
-  view: ''
-  controller: ''
-
-dashboard:
-  components: ''
-
-requests:
-  app: 'app'
-  routers:
-    client: ''
-
-data:
-  directory: ''
-  public: ''
-
-database:
-  migrations: ''
-```
-
-C'est aussi la technique de **bissection** quand le `FATAL` tombe : vide tous les
-bindings, build, puis remets-les un par un jusqu'à ce que ça repète.
+> Les scripts de `data/` tournent à l'installation de **l'extension** (ils affichent
+> les étapes de configuration) et n'ont rien à voir avec `egg/install.sh`, qui installe
+> un modpack dans un serveur. Ils doivent tous sortir en `exit 0` : un code non nul
+> fait échouer l'installation de l'extension.
 
 ### B.4 Construire
 
@@ -489,7 +454,7 @@ Rien de bloquant. Restent des points de confort :
 
 | Symptôme | Cause probable et remède |
 |---|---|
-| `FATAL: Extension configuration points towards one or more files that do not exist` | Un chemin de `conf.yml` est absent. Le message ne dit pas lequel : bissecte en vidant les bindings (cf. [B.3](#b3-régler-les-bindings-manquants-obligatoire)). |
+| `FATAL: Extension configuration points towards one or more files that do not exist` | Un chemin de `conf.yml` est absent — typiquement une copie incomplète vers `.blueprint/dev/`. Le message ne dit pas lequel : lance le contrôle de [B.3](#b3-vérifier-les-bindings), puis bissecte en vidant les bindings. |
 | `blueprint -build` : commande inconnue | Mode développement désactivé (cf. [A.5](#a5-activer-le-mode-développement)). |
 | L'onglet n'apparaît pas | 1) Cache navigateur — Ctrl+Shift+R (le panel sert du JS compilé). 2) `dashboard.components` doit valoir `components` (le dossier), pas `components/Components.yml`. 3) Le schéma a déjà changé entre versions de Blueprint : diffe avec le gabarit `3` de `blueprint -init`. |
 | L'onglet apparaît sur un serveur non-Minecraft | Manque connu, pas un bug de placement : le filtrage par egg n'est pas implémenté. |

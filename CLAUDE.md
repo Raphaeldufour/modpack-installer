@@ -42,8 +42,11 @@ here must also be bound in `conf.yml` or the build silently ignores it.
 | `components/sections/` | referenced from `Components.yml`, extensionless |
 | `app/` | `requests.app` |
 | `routes/client.php` | `requests.routers.client` |
-| `data/` | `data.directory` |
-| `database/migrations/` | `database.migrations` |
+| `admin/` | `admin.view` + `admin.controller` |
+| `assets/icon.png` | `info.icon` |
+| `data/` | `data.directory` — extension lifecycle hooks, must exit 0 |
+| `public/` | `data.public` — bound but empty |
+| `database/migrations/` | `database.migrations` — empty; config lives in `settings` |
 | `egg/` | **not part of the extension** — imported separately by the admin |
 
 ## Conventions
