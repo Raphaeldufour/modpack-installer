@@ -80,23 +80,15 @@ class ModpackInstallService
             ));
         }
 
-        // Refuse before touching anything rather than half-installing a pack the
-        // panel cannot finish. A manifest pack needs its mods fetched one at a
-        // time, which is the next piece of work; saying so beats leaving a
-        // server with a loader and an empty mods directory.
-        if (!$plan->selfContained) {
-            throw new DisplayException(
-                'This pack ships a manifest rather than a ready-made server, so its mods have to be '
-                . 'fetched one by one — which this version cannot do yet. Choose a version whose '
-                . 'publisher provides a server pack.'
-            );
-        }
-
         $this->killServer($server);
 
         $notes = $wipe ? $this->wipeServerFiles($server) : [];
 
         $this->unpack($server, $plan->archiveUrl);
+
+        if (!$plan->selfContained) {
+            $notes = array_merge($notes, $this->applyManifest($server, $provider, $plan));
+        }
 
         // The point of the exercise: whatever the pack runs on, put that exact
         // server jar in place rather than trusting the egg to have done it.
@@ -127,6 +119,150 @@ class ModpackInstallService
                 'Wings could not download or unpack the modpack: ' . $exception->getMessage()
             );
         }
+    }
+
+    /**
+     * Finish a pack that unpacked as a manifest rather than as a server.
+     *
+     * The mods are queued on Wings rather than fetched one at a time in the
+     * foreground: a pack of three hundred mods would otherwise hold this request
+     * open for the length of three hundred sequential downloads. Wings takes
+     * each enqueue in milliseconds and does the transfers on its own time, which
+     * keeps the panel's part short — the same bargain the archive download makes.
+     *
+     * The cost is that a mod which fails to download does so silently, out of
+     * this request's sight. That is the honest limit of installing without
+     * progress reporting, and it is why the note below tells the user where to
+     * look.
+     *
+     * @return string[]
+     */
+    private function applyManifest(Server $server, ProviderInterface $provider, InstallPlan $plan): array
+    {
+        $repository = $this->fileRepository->setServer($server);
+
+        try {
+            $index = $repository->getContent('/' . ltrim((string) $plan->indexPath, '/'));
+        } catch (DaemonConnectionException $exception) {
+            throw new DisplayException(
+                'The pack unpacked, but its manifest could not be read: ' . $exception->getMessage()
+            );
+        }
+
+        $files = $provider->manifestFiles($index);
+
+        if ($files === []) {
+            throw new DisplayException('This pack lists no server-side files, which cannot be right.');
+        }
+
+        // Wings will not create a missing parent, so every directory the
+        // manifest mentions has to exist before anything is queued into it.
+        $directories = [];
+        foreach ($files as $file) {
+            $directory = trim(dirname($file['path']), '.');
+            if ($directory !== '' && $directory !== '/') {
+                $directories[ltrim($directory, '/')] = true;
+            }
+        }
+
+        foreach (array_keys($directories) as $directory) {
+            try {
+                $repository->createDirectory($directory, '/');
+            } catch (DaemonConnectionException $exception) {
+                // Already there is the common case and not a problem.
+                Log::debug('modpacks: could not create a manifest directory', [
+                    'directory' => $directory,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $queued = 0;
+        $failed = 0;
+
+        foreach ($files as $file) {
+            $directory = ltrim(trim(dirname($file['path']), '.'), '/');
+
+            try {
+                $repository->pull($file['url'], '/' . $directory, [
+                    'filename' => basename($file['path']),
+                    'foreground' => false,
+                ]);
+                $queued++;
+            } catch (DaemonConnectionException $exception) {
+                $failed++;
+                Log::warning('modpacks: could not queue a manifest file', [
+                    'path' => $file['path'],
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $notes = [$queued . ' mods are downloading in the background; give them a moment before '
+            . 'starting the server, and check the Files tab if it will not boot.'];
+
+        if ($failed > 0) {
+            $notes[] = "{$failed} of them could not be queued at all and are missing.";
+        }
+
+        $notes = array_merge($notes, $this->applyOverrides($server, $plan));
+
+        try {
+            $repository->deleteFiles('/', [ltrim((string) $plan->indexPath, '/')]);
+        } catch (DaemonConnectionException $exception) {
+            Log::debug('modpacks: could not remove the manifest', ['message' => $exception->getMessage()]);
+        }
+
+        return $notes;
+    }
+
+    /**
+     * Move each override directory's contents up to the server root.
+     *
+     * Applied in the order the plan gives them, so a later directory overwrites
+     * an earlier one — which is exactly what `server-overrides` is for.
+     *
+     * @return string[]
+     */
+    private function applyOverrides(Server $server, InstallPlan $plan): array
+    {
+        $repository = $this->fileRepository->setServer($server);
+        $notes = [];
+
+        foreach ($plan->overrideDirs as $directory) {
+            try {
+                $entries = collect($repository->getDirectory('/' . $directory))
+                    ->pluck('name')
+                    ->filter(fn ($name) => is_string($name) && $name !== '')
+                    ->values();
+            } catch (DaemonConnectionException $exception) {
+                // A pack does not have to ship every override directory.
+                continue;
+            }
+
+            if ($entries->isEmpty()) {
+                continue;
+            }
+
+            try {
+                $repository->renameFiles('/', $entries->map(fn (string $name) => [
+                    'from' => "{$directory}/{$name}",
+                    'to' => $name,
+                ])->all());
+
+                $repository->deleteFiles('/', [$directory]);
+            } catch (DaemonConnectionException $exception) {
+                Log::warning('modpacks: could not apply an override directory', [
+                    'directory' => $directory,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                $notes[] = "The pack's {$directory}/ could not be applied, so its configs are still "
+                    . "sitting in that folder.";
+            }
+        }
+
+        return $notes;
     }
 
     /**

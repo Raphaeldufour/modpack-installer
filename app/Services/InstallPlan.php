@@ -24,6 +24,18 @@ class InstallPlan
         public readonly ?string $minecraftVersion = null,
         public readonly ?string $loader = null,
         public readonly ?string $loaderVersion = null,
+
+        /** The manifest inside the archive, when this is not a server pack. */
+        public readonly ?string $indexPath = null,
+
+        /**
+         * Directories inside the archive whose contents belong at the server
+         * root, in the order they should be applied — later ones win, which is
+         * how server-overrides is meant to beat overrides.
+         *
+         * @var string[]
+         */
+        public readonly array $overrideDirs = [],
     ) {
     }
 }

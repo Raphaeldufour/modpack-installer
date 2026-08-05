@@ -107,9 +107,54 @@ class ModrinthProvider implements ProviderInterface
         return new InstallPlan(
             archiveUrl: $url,
             selfContained: false,
+            indexPath: 'modrinth.index.json',
+            // server-overrides is applied last on purpose: where both define the
+            // same file, the server variant is the one that must win.
+            overrideDirs: ['overrides', 'server-overrides'],
             minecraftVersion: $version['dependencies']['minecraft'] ?? ($version['game_versions'][0] ?? null),
             loader: $loader,
             loaderVersion: $loaderVersion,
         );
+    }
+
+    /**
+     * Mods listed in modrinth.index.json, with the client-only ones dropped.
+     *
+     * `env.server` is the pack author's own statement about each file. Shipping
+     * the "unsupported" ones is not a cosmetic mistake — client-only mods crash
+     * a server on boot. Anything not marked is required, per the format.
+     */
+    public function manifestFiles(string $indexContents): array
+    {
+        $index = json_decode($indexContents, true);
+
+        if (!is_array($index)) {
+            throw new \RuntimeException('modrinth.index.json could not be read.');
+        }
+
+        $files = [];
+
+        foreach ($index['files'] ?? [] as $file) {
+            if (($file['env']['server'] ?? 'required') === 'unsupported') {
+                continue;
+            }
+
+            $path = $file['path'] ?? null;
+            $url = $file['downloads'][0] ?? null;
+
+            if (!is_string($path) || !is_string($url) || $path === '' || $url === '') {
+                continue;
+            }
+
+            // A path is relative to the server root by the format's definition;
+            // refuse anything trying to climb out of it.
+            if (str_starts_with($path, '/') || str_contains($path, '..')) {
+                continue;
+            }
+
+            $files[] = ['path' => $path, 'url' => $url];
+        }
+
+        return $files;
     }
 }

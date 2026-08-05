@@ -144,4 +144,20 @@ class CurseForgeProvider implements ProviderInterface
             loaderVersion: $loaderVersion,
         );
     }
+
+    /**
+     * Not implemented yet, and it is not the same job as Modrinth's.
+     *
+     * A CurseForge manifest lists project and file ids, not URLs, so each entry
+     * needs its own download-url call before anything can be fetched — plus a
+     * redirect to follow per mod. Doing that for a few hundred mods needs the
+     * bulk files endpoint and work off the request thread, which the
+     * self-contained server pack path does not.
+     */
+    public function manifestFiles(string $indexContents): array
+    {
+        throw new \RuntimeException(
+            'CurseForge packs without a published server pack are not installable yet.'
+        );
+    }
 }

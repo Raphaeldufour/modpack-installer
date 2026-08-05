@@ -22,4 +22,15 @@ interface ProviderInterface
      * serving.
      */
     public function installPlan(string $packId, string $versionId): InstallPlan;
+
+    /**
+     * Turn a manifest archive's index into the files still to be fetched.
+     *
+     * Only called when installPlan() returned a plan that is not self-contained.
+     * The index is read off the server after unpacking, so this receives its
+     * contents rather than fetching anything itself.
+     *
+     * @return array[] each ['path' => string, 'url' => string]
+     */
+    public function manifestFiles(string $indexContents): array;
 }

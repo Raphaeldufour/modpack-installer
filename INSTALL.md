@@ -466,7 +466,8 @@ Rien de bloquant. Restent des points de confort :
 | Symptôme | Cause probable et remède |
 |---|---|
 | `Wings could not download or unpack the modpack` avec `302 Found` côté Wings | Wings refuse les redirections et exige un `200` direct. Le panel résout donc la chaîne avant de lui passer l'URL (`RemoteFile::resolve`). Si ça réapparaît, c'est qu'un CDN dépasse 5 sauts ou répond autrement qu'en `Location`. |
-| `This pack ships a manifest rather than a ready-made server` | Attendu : les packs à manifeste (`.mrpack` Modrinth, fichiers CurseForge sans server pack publié) exigent de télécharger les mods un par un, ce qui n'est pas encore implémenté. Choisis une version dont l'éditeur fournit un server pack. |
+| `CurseForge packs without a published server pack are not installable yet` | Attendu. Un manifeste CurseForge liste des identifiants, pas des URL : chaque mod demande un appel supplémentaire et une redirection. Choisis une version dont l'éditeur fournit un server pack. Modrinth, lui, fonctionne. |
+| Un pack Modrinth s'installe mais le serveur ne démarre pas tout de suite | Les mods sont mis en file chez Wings et se téléchargent en arrière-plan. Laisse-leur un moment et regarde l'onglet Files : `mods/` doit se remplir. |
 
 | Symptôme | Cause probable et remède |
 |---|---|

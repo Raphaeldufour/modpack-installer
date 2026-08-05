@@ -138,9 +138,13 @@ skipped when empty, and `dashboard.components`, `data.directory`, `data.public`,
       to be run, so they need a mechanism the other four do not
 - [ ] Worlds, Plugins and Mods tabs, all on the Versions tab's file-work path
 - [ ] FTB, Technic, ATLauncher providers
-- [ ] Manifest packs — Modrinth `.mrpack` and CurseForge files without a
-      published server pack — need their mods fetched one at a time, which is
-      the next piece of work. They are refused with an explanation for now
+- [ ] CurseForge packs without a published server pack. Their manifest lists
+      project and file ids rather than URLs, so each mod needs a download-url
+      call and a redirect followed — that needs the bulk files endpoint and work
+      off the request thread. Refused with an explanation for now
+- [ ] Manifest mods are queued on Wings with `foreground: false`, so a mod that
+      fails to download does so silently. Needs progress reporting to fix
+      properly
 - [ ] Surface CurseForge `allowModDistribution: false` blocks in the UI
 - [ ] Hide the tab on non-Minecraft eggs (mirror the framework's
       `ServerRouter.tsx` egg-filtering logic)
