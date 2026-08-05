@@ -324,13 +324,38 @@ class InstalledModsService
 
     private function readState(DaemonFileRepository $repository): array
     {
+        if (!$this->fileExists($repository, '/', self::STATE_FILE)) {
+            return [];
+        }
+
         try {
             $state = json_decode($repository->getContent('/' . self::STATE_FILE), true);
-        } catch (DaemonConnectionException $exception) {
+        } catch (Throwable $exception) {
+            Log::debug('modpacks: installed mods state could not be read', [
+                'message' => $exception->getMessage(),
+            ]);
+
             return [];
         }
 
         return is_array($state) ? $state : [];
+    }
+
+    private function fileExists(DaemonFileRepository $repository, string $directory, string $filename): bool
+    {
+        try {
+            $entries = $repository->getDirectory($directory);
+        } catch (Throwable $exception) {
+            return false;
+        }
+
+        foreach ($entries as $entry) {
+            if (($entry['name'] ?? null) === $filename) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function writeState(DaemonFileRepository $repository, array $state): void
