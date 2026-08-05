@@ -115,7 +115,11 @@ class ModpackInstallService
         try {
             $repository = $this->fileRepository->setServer($server);
 
-            $repository->pull($url, '/', ['filename' => $archive, 'foreground' => true]);
+            // Wings refuses a redirect, so hand it the URL the CDN ends at.
+            $repository->pull(RemoteFile::resolve($url), '/', [
+                'filename' => $archive,
+                'foreground' => true,
+            ]);
             $repository->decompressFile('/', $archive);
             $repository->deleteFiles('/', [$archive]);
         } catch (DaemonConnectionException $exception) {
@@ -151,7 +155,7 @@ class ModpackInstallService
                 ->get(self::RESOLVABLE_LOADERS[$loader])
                 ->resolve($plan->minecraftVersion, $plan->loaderVersion);
 
-            $this->fileRepository->setServer($server)->pull($download->url, '/', [
+            $this->fileRepository->setServer($server)->pull(RemoteFile::resolve($download->url), '/', [
                 'filename' => $download->filename,
                 'foreground' => true,
             ]);

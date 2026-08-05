@@ -19,6 +19,13 @@ React tab -> client API -> ProviderRegistry  -> Modrinth / CurseForge REST
                                     +- StartupModificationService (startup + image)
 ```
 
+**Wings will not follow a redirect.** Its downloader wants a direct 200 and
+reports anything else as `downloader: got bad response status from endpoint:
+302 Found`. Most CDN links are redirects — CurseForge hands out
+`edge.forgecdn.net` URLs, Purpur's `/download` is one — so every URL goes
+through `RemoteFile::resolve()` before it reaches `pull()`. That costs one
+one-byte ranged request and keeps the payload off the panel.
+
 The rule is that **the panel never moves a payload itself**. It resolves a URL
 and hands it to Wings, which fetches it onto the volume directly, so a 400MB
 pack costs one short API call rather than a request held open for minutes. Small

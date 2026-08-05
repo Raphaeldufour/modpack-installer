@@ -11,19 +11,15 @@ use Pterodactyl\Repositories\Wings\DaemonFileRepository;
 use Pterodactyl\Repositories\Wings\DaemonPowerRepository;
 use Pterodactyl\Services\Servers\StartupModificationService;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\JavaVersion;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\RemoteFile;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 
 /**
  * Swaps the server jar, without reinstalling the server.
  *
- * This is the panel doing file work, which the modpack path deliberately does
- * not do — and the difference is the workload, not a change of mind. A version
- * change is one jar. Wings fetches it onto the volume itself, so the panel's
- * part is a single short API call, and nothing else on the server is touched:
- * worlds, configs, plugins and mods all survive.
- *
- * A modpack is a manifest of hundreds of files plus a loader that has to be
- * executed to install itself, which is why that still goes through a reinstall.
+ * A version change is one jar. Wings fetches it onto the volume itself, so the
+ * panel's part is a single short API call, and nothing else on the server is
+ * touched: worlds, configs, plugins and mods all survive.
  */
 class VersionInstallService
 {
@@ -80,7 +76,9 @@ class VersionInstallService
         // panel. Foreground so a failure is reported here rather than vanishing
         // into a background job the user cannot see.
         try {
-            $this->fileRepository->setServer($server)->pull($download->url, '/', [
+            // Wings' downloader treats a redirect as a failure, and Purpur (among
+            // others) serves its jar through one.
+            $this->fileRepository->setServer($server)->pull(RemoteFile::resolve($download->url), '/', [
                 'filename' => $download->filename,
                 'foreground' => true,
             ]);
