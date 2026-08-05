@@ -13,11 +13,15 @@ Ce document couvre les deux sens de « installer le blueprint » :
 > Blueprint — **jamais** sur un panel de production. C'est aussi la règle posée dans
 > [`CLAUDE.md`](CLAUDE.md).
 
-> **État actuel du dépôt.** C'est un *squelette*, pas une extension terminée.
-> `blueprint -build` échouera tel quel : plusieurs chemins déclarés dans
+> **État actuel du dépôt.** Le **backend est complet** — providers, DTO, registre,
+> service d'installation, contrôleur et routes. Il manque le **frontend**
+> (`Components.yml` et le composant React), donc aucun onglet n'apparaît encore ;
+> l'API client, elle, répond. Voir [« L'API client »](#lapi-client) pour la tester
+> directement, et [« Ce qui manque encore »](#ce-qui-manque-encore-pour-un-onglet-fonctionnel).
+>
+> `blueprint -build` **échouera tel quel** : plusieurs chemins déclarés dans
 > [`conf.yml`](conf.yml) n'existent pas encore. L'[étape B.3](#b3-régler-les-bindings-manquants-obligatoire)
-> explique exactement quoi faire, et [« Ce qui manque encore »](#ce-qui-manque-encore-pour-un-onglet-fonctionnel)
-> liste ce qu'il reste à écrire pour obtenir un onglet réellement fonctionnel.
+> explique exactement quoi faire.
 
 ---
 
@@ -177,12 +181,12 @@ FATAL: Extension configuration points towards one or more files that do not exis
 | Binding dans `conf.yml` | Chemin | Présent ? |
 |---|---|---|
 | — (racine) | `conf.yml` | ✅ |
-| `requests.app` | `app/` | ✅ (partiel) |
+| `requests.app` | `app/` | ✅ |
+| `requests.routers.client` | `routes/client.php` | ✅ |
 | `info.icon` | `assets/icon.png` | ❌ |
 | `admin.view` | `admin/view.blade.php` | ❌ |
 | `admin.controller` | `admin/AdminController.php` | ❌ |
 | `dashboard.components` | `Components.yml` | ❌ |
-| `requests.routers.client` | `routes/client.php` | ❌ |
 | `data.directory` | `data/` | ❌ |
 | `data.public` | `public/` | ❌ |
 | `database.migrations` | `database/migrations/` | ❌ |
@@ -195,7 +199,7 @@ Deux chemins possibles.
 DEV=/var/www/pterodactyl/.blueprint/dev
 cd "$DEV"
 
-mkdir -p assets admin routes data public database/migrations resources/scripts
+mkdir -p assets admin data public database/migrations resources/scripts
 
 # Icône : n'importe quel PNG fait l'affaire pour un build de test
 curl -fsSL -o assets/icon.png https://dummyimage.com/64x64/2d2d2d/ffffff.png
@@ -411,36 +415,62 @@ démarrage) se modifient dans `egg/egg.template.json`.
 
 ---
 
+## L'API client
+
+Le backend est complet. Une fois l'extension buildée, ces endpoints existent (aux
+réserves de préfixe évoquées en [B.5](#b5-vérifier)) :
+
+| Méthode | Chemin | Permission | Rôle |
+|---|---|---|---|
+| `GET` | `…/servers/{server}/modpacks/providers` | accès au serveur | Liste des providers |
+| `GET` | `…/modpacks/packs?provider=&query=&page=` | accès au serveur | Recherche de packs |
+| `GET` | `…/modpacks/packs/{pack}/versions?provider=` | accès au serveur | Versions d'un pack |
+| `POST` | `…/modpacks/install` | `startup.update` **+** `file.delete` | Lance l'installation |
+
+Corps du `POST /install` :
+
+```json
+{ "provider": "modrinth", "pack": "1KVo5zza", "version": "yBz9Qvbp", "wipe": true }
+```
+
+Il répond `202 Accepted` : le panel a seulement demandé à Wings de réinstaller, la
+progression réelle s'affiche dans la console du serveur.
+
+Test rapide en ligne de commande (le préfixe exact vient de `route:list`) :
+
+```bash
+curl -H "Authorization: Bearer $PTERO_CLIENT_KEY" \
+     -H "Accept: application/json" \
+     "https://panel.example.com/api/client/servers/1a7ce997/modpacks/packs?provider=modrinth&query=create"
+```
+
+**La double permission sur `install` est intentionnelle** : installer un pack efface
+le système de fichiers *et* réécrit la commande de démarrage. Un sous-utilisateur
+disposant du seul accès console ne doit pas pouvoir détruire un serveur par ce biais.
+Ne l'assouplis pas.
+
 ## Ce qui manque encore pour un onglet fonctionnel
 
-Après les étapes ci-dessus, le build passe — mais l'onglet Modpacks n'est **pas** encore
-fonctionnel. Les fichiers suivants sont décrits par [`STRUCTURE.md`](STRUCTURE.md) et
-référencés par le code existant, mais restent à écrire :
+Il reste le frontend. Le build passe et l'API répond, mais aucun onglet n'apparaît tant
+que ces deux fichiers n'existent pas :
 
 | Fichier | Rôle |
 |---|---|
-| `app/Services/Modpacks/Pack.php` | DTO retourné par `search()` — référencé par les deux providers |
-| `app/Services/Modpacks/Version.php` | DTO retourné par `versions()` — idem |
-| `app/Services/Modpacks/ProviderRegistry.php` | Résout une clé (`modrinth`, `curseforge`) vers un provider |
-| `app/Services/Modpacks/ModpackInstallService.php` | kill → `StartupModificationService` → `reinstall()` |
-| `app/Http/Controllers/Extensions/modpacks/ModpackController.php` | Endpoints de l'API client |
-| `routes/client.php` | Déclaration de ces endpoints |
 | `Components.yml` | Placement de l'onglet dans les pages serveur |
 | `resources/scripts/ModpacksContainer.tsx` | L'onglet React |
 
-Les seules classes PHP présentes aujourd'hui sont `ProviderInterface`,
-`ModrinthProvider` et `CurseForgeProvider`. Elles sont autoloadées à la demande : leur
-référence à `Pack` et `Version` ne fait donc pas échouer le build, mais elle fera
-échouer le premier appel réel.
+Deux points à garder en tête en les écrivant :
 
-Deux garde-fous à ne pas oublier en les écrivant, tirés du [`README.md`](README.md) :
+- Le schéma de `Components.yml` de ce dépôt **n'a jamais été validé** contre un panel
+  qui tourne (`CLAUDE.md`). Pars du gabarit « Working with components » de
+  `blueprint -init` plutôt que de la documentation.
+- Le composant ne doit contenir **aucun** branchement spécifique à un provider : il
+  consomme `/providers` et traite toutes les entrées de la même façon. C'est la
+  contrepartie de la normalisation faite par `Pack` et `Version` côté PHP.
 
-- Le contrôleur doit exiger **à la fois** `startup.update` et `file.delete`. Installer
-  un pack efface le système de fichiers et réécrit la commande de démarrage ; un
-  sous-utilisateur avec le seul accès console ne doit pas pouvoir détruire un serveur.
-- Le frontend ne doit contenir **aucun** branchement spécifique à un provider. Ajouter
-  un provider = une classe implémentant `ProviderInterface` + une ligne dans
-  `ProviderRegistry`, et rien d'autre.
+Restent aussi ouverts, côté confort plutôt que fonctionnement : la page admin réelle
+(la clé CurseForge se pose encore à la main), le masquage de l'onglet sur les eggs
+non-Minecraft, et le sondage de `/state` pendant l'installation.
 
 ---
 

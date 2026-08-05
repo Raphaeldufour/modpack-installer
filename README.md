@@ -35,7 +35,9 @@ separately by an admin and is not shipped with the extension.
 
 ```
 conf.yml                              # extension manifest (see STRUCTURE.md)
-app/Services/Modpacks/*.php           # providers — requests.app
+app/Services/Modpacks/                # Pack, Version, providers, registry, install service
+app/Http/Controllers/Extensions/modpacks/ModpackController.php
+routes/client.php                     # client API endpoints — requests.routers.client
 egg/install.sh                        # source of truth for the egg script
 egg/egg.template.json                 # egg metadata; script slot is a placeholder
 egg/build_egg.py                      # install.sh + template -> modpack-installer.json
