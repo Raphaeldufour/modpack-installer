@@ -272,26 +272,80 @@ echo "eula=true" > eula.txt
 # ---------------------------------------------------------------------------
 MEM="${SERVER_MEMORY:-2048}"
 
+# A server pack frequently ships a loader installer and no libraries/, leaving
+# its own launcher (startserver.sh, ServerStart.sh, …) to run the installer on
+# first boot. Those launchers are not usable as a Pterodactyl startup command:
+# they wrap the server in their own `while true` restart loop, which fights the
+# panel for process control and breaks Stop, and they prompt on stdin when
+# something goes wrong. Their pack-specific env vars (ATM10_RESTART and the
+# like) are no help either, being named after each pack.
+#
+# So run the installer here instead. It costs a minute once, at install time
+# where the log is being watched, and afterwards the loader looks exactly like
+# any other — the detection below finds unix_args.txt and writes a start.sh
+# that runs the server directly, one process, under the panel's control.
+if [ ! -d libraries ] && [ ! -f run.sh ]; then
+    INSTALLER=$(ls -1 ./*nstaller*.jar 2>/dev/null | head -n1 || true)
+    if [ -n "$INSTALLER" ]; then
+        echo "Pack ships a loader installer; running it now..."
+        ensure_java
+        java -jar "$INSTALLER" --installServer && rm -f "$INSTALLER"
+    fi
+fi
+
+# Packs tune their own JVM flags in user_jvm_args.txt. Keep them, but let the
+# panel's memory limit win: a pack shipping -Xmx8G on a 4G server would other-
+# wise be killed by the OOM reaper on a good day and swap itself to death on a
+# bad one.
+write_jvm_args() {
+    local tmp="${WORK}/user_jvm_args.txt"
+
+    : > "$tmp"
+    if [ -f user_jvm_args.txt ]; then
+        grep -vE '^[[:space:]]*-Xm[sx]' user_jvm_args.txt > "$tmp" || true
+    fi
+    printf -- '-Xms128M\n-Xmx%sM\n' "$MEM" >> "$tmp"
+    mv "$tmp" user_jvm_args.txt
+}
+
 if [ -f run.sh ]; then
-    # Forge 1.17+ and NeoForge ship their own run.sh plus user_jvm_args.txt.
-    echo "-Xms128M -Xmx${MEM}M" > user_jvm_args.txt
+    # Forge 1.17+ and NeoForge ship run.sh alongside user_jvm_args.txt.
+    write_jvm_args
     printf '#!/bin/bash\nexec ./run.sh nogui\n' > start.sh
 
-elif ls libraries/net/minecraftforge/forge/*/unix_args.txt >/dev/null 2>&1; then
-    ARGS=$(ls libraries/net/minecraftforge/forge/*/unix_args.txt | head -n1)
-    printf '#!/bin/bash\nexec java -Xms128M -Xmx%sM @%s nogui\n' "$MEM" "$ARGS" > start.sh
+elif ARGS=$(ls libraries/net/neoforged/neoforge/*/unix_args.txt 2>/dev/null | head -n1) && [ -n "$ARGS" ]; then
+    write_jvm_args
+    printf '#!/bin/bash\nexec java @user_jvm_args.txt @%s nogui\n' "$ARGS" > start.sh
 
-elif ls libraries/net/neoforged/neoforge/*/unix_args.txt >/dev/null 2>&1; then
-    ARGS=$(ls libraries/net/neoforged/neoforge/*/unix_args.txt | head -n1)
-    printf '#!/bin/bash\nexec java -Xms128M -Xmx%sM @%s nogui\n' "$MEM" "$ARGS" > start.sh
+elif ARGS=$(ls libraries/net/minecraftforge/forge/*/unix_args.txt 2>/dev/null | head -n1) && [ -n "$ARGS" ]; then
+    write_jvm_args
+    printf '#!/bin/bash\nexec java @user_jvm_args.txt @%s nogui\n' "$ARGS" > start.sh
 
 else
-    # Fabric, Quilt, old Forge, and publisher server packs: a plain jar.
-    JAR=$(ls -S ./*.jar 2>/dev/null | grep -viE 'installer|sources' | head -n1)
-    JAR=${JAR:-server.jar}
+    # Fabric, Quilt, old Forge, and vanilla-shaped server packs: a plain jar.
+    #
+    # The `|| true` is load-bearing. Under `set -euo pipefail` a grep that
+    # matches nothing exits 1 and takes the whole script with it — which is
+    # exactly what happened on a pack whose only jar was the loader installer:
+    # the install finished, then died here without a word, leaving a server with
+    # no start.sh and a console repeating "bash: start.sh: No such file".
+    JAR=$(ls -S ./*.jar 2>/dev/null | grep -viE 'installer|sources' | head -n1 || true)
+
+    if [ -z "$JAR" ]; then
+        echo "" >&2
+        echo "FATAL: no loader arguments and no server jar were found, so there is" >&2
+        echo "nothing to start. The pack extracted, but not into a shape this script" >&2
+        echo "recognises. Contents:" >&2
+        ls -la >&2
+        exit 1
+    fi
+
     printf '#!/bin/bash\nexec java -Xms128M -Xmx%sM -jar %s nogui\n' "$MEM" "$JAR" > start.sh
 fi
 
-chmod +x start.sh run.sh 2>/dev/null || true
+chmod +x start.sh 2>/dev/null || true
+chmod +x run.sh 2>/dev/null || true
 
-echo "Modpack installed. Startup command written to start.sh."
+echo ""
+echo "Modpack installed. Startup command:"
+sed -n '2p' start.sh | sed 's/^/  /'
