@@ -17,7 +17,7 @@ data:
   public: 'public'
 
 dashboard:
-  components: 'Components.yml'
+  components: 'components'       # a DIRECTORY containing Components.yml, not the file itself
 
 requests:
   app: 'app'                      # copied into the panel's app/ tree

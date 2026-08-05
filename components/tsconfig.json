@@ -1,0 +1,27 @@
+{
+    "_comment": [
+        "Editor/tooling only — Blueprint compiles these components with the panel's own",
+        "build, and this file is not consulted at build time. The @/ aliases resolve",
+        "against .dist/types, which Blueprint generates inside the panel; those paths do",
+        "not exist in this repository, so type errors in an editor here are expected",
+        "until the extension has been built once."
+    ],
+    "compilerOptions": {
+        "baseUrl": ".",
+        "moduleResolution": "node",
+        "jsx": "react",
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "skipLibCheck": true,
+        "noEmit": true,
+        "typeRoots": ["../.dist/types"],
+        "paths": {
+            "@/*": ["../.dist/types/*"],
+            "@definitions/*": ["../.dist/types/api/definitions/*"],
+            "@feature/*": ["../.dist/types/components/server/features/*"],
+            "@blueprint/*": ["../.dist/types/blueprint/*"]
+        }
+    },
+    "include": ["./**/*"],
+    "exclude": ["node_modules"]
+}

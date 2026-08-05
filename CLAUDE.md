@@ -38,10 +38,10 @@ here must also be bound in `conf.yml` or the build silently ignores it.
 | Path | conf.yml binding |
 |---|---|
 | `conf.yml` | — (required, root) |
-| `Components.yml` | `dashboard.components` |
+| `components/` | `dashboard.components` (a directory holding `Components.yml`) |
+| `components/sections/` | referenced from `Components.yml`, extensionless |
 | `app/` | `requests.app` |
 | `routes/client.php` | `requests.routers.client` |
-| `resources/scripts/` | referenced from `Components.yml` |
 | `data/` | `data.directory` |
 | `database/migrations/` | `database.migrations` |
 | `egg/` | **not part of the extension** — imported separately by the admin |
@@ -76,10 +76,13 @@ by blanking bindings.
 
 ## Unverified — check before trusting
 
-- **`Components.yml` schema.** Written from documentation, not validated
-  against a running panel. The component API has moved between Blueprint
-  releases. Run `blueprint -init` and pick the "Working with components"
-  template, then diff.
+- **`Components.yml` schema.** Resolved: diffed against the official
+  "Working with components" template (`BlueprintFramework/templates`, folder
+  `3`). The earlier guess was wrong in a way that would have failed the build —
+  `dashboard.components` names a *directory* containing `Components.yml`, not
+  the file. `Component:` values are relative to that directory and drop the
+  extension. Still worth re-diffing after a Blueprint upgrade: this API has
+  moved between releases before.
 - **Client route prefix.** The React component hardcodes
   `/api/client/servers/{uuid}/modpacks`. Confirm with `route:list`.
 - **`admin/view.blade.php` and `admin/AdminController.php`** are bound in

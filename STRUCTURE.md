@@ -7,7 +7,11 @@ panel, `blueprint -export` packages it into a distributable `.blueprint` file.
 ```
 /var/www/pterodactyl/.blueprint/dev/
 ├── conf.yml                  # REQUIRED, must be at the root
-├── Components.yml            # only if dashboard.components points here
+├── components/               # dashboard.components -> a DIRECTORY, not a file
+│   ├── Components.yml        # the component wiring itself
+│   ├── tsconfig.json         # editor tooling only
+│   └── sections/
+│       └── ModpacksSection.tsx
 ├── assets/
 │   └── icon.png              # info.icon
 ├── admin/
@@ -26,9 +30,6 @@ panel, `blueprint -export` packages it into a distributable `.blueprint` file.
 │       └── ModpackInstallService.php
 ├── routes/
 │   └── client.php            # requests.routers.client
-├── resources/
-│   └── scripts/
-│       └── ModpacksContainer.tsx
 ├── database/
 │   └── migrations/           # database.migrations (may be empty)
 ├── data/                     # data.directory
@@ -49,6 +50,13 @@ not exist` and does not tell you which one. Bisect by blanking bindings.
 
 **Unbound files are ignored.** Dropping a `.php` into `app/` does nothing
 unless `requests.app` is set. There is no auto-discovery.
+
+**`dashboard.components` names a directory, not a file.** It points at the
+folder that *contains* `Components.yml`, and `Component:` values inside that
+file are resolved relative to it, without a file extension — so
+`sections/ModpacksSection` means `components/sections/ModpacksSection.tsx`.
+Pointing the binding straight at `Components.yml` fails the build with the
+usual unhelpful `FATAL`.
 
 **The identifier is a namespace.** `info.identifier: modpacks` decides your
 admin route (`/admin/extensions/modpacks`), your public asset path, your

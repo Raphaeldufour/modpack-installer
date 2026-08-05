@@ -1,0 +1,17 @@
+# Component wiring for the Modpacks extension.
+# Schema: https://blueprint.zip/docs/configs/componentsyml
+#
+# Three things about this file that are easy to get wrong:
+#
+#   1. dashboard.components in conf.yml points at THIS DIRECTORY, not at this
+#      file. Pointing it straight at Components.yml is a build failure.
+#   2. Component paths are relative to this directory and carry no extension:
+#      "sections/ModpacksSection" resolves to sections/ModpacksSection.tsx.
+#   3. Every value is a string, AdminOnly included — "false", not false.
+#
+# Route entries are kept on a single line to match the shape used by the
+# official "Working with components" template.
+
+Navigation:
+  Routes:
+    - { Name: "Modpacks", Path: "/modpacks", Type: "server", Component: "sections/ModpacksSection", AdminOnly: "false" }

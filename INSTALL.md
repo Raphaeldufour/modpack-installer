@@ -13,11 +13,10 @@ Ce document couvre les deux sens de « installer le blueprint » :
 > Blueprint — **jamais** sur un panel de production. C'est aussi la règle posée dans
 > [`CLAUDE.md`](CLAUDE.md).
 
-> **État actuel du dépôt.** Le **backend est complet** — providers, DTO, registre,
-> service d'installation, contrôleur et routes. Il manque le **frontend**
-> (`Components.yml` et le composant React), donc aucun onglet n'apparaît encore ;
-> l'API client, elle, répond. Voir [« L'API client »](#lapi-client) pour la tester
-> directement, et [« Ce qui manque encore »](#ce-qui-manque-encore-pour-un-onglet-fonctionnel).
+> **État actuel du dépôt.** Backend **et** frontend sont écrits : providers, DTO,
+> registre, service d'installation, contrôleur, routes, `components/Components.yml`
+> et l'onglet React. Ce qui reste relève du confort, pas du fonctionnement — voir
+> [« Ce qui manque encore »](#ce-qui-manque-encore).
 >
 > `blueprint -build` **échouera tel quel** : plusieurs chemins déclarés dans
 > [`conf.yml`](conf.yml) n'existent pas encore. L'[étape B.3](#b3-régler-les-bindings-manquants-obligatoire)
@@ -122,10 +121,10 @@ blueprint -init
 `-init` propose des gabarits de départ ; il crée surtout `/var/www/pterodactyl/.blueprint/dev/`,
 qui est le répertoire dans lequel on va travailler.
 
-> Garde le gabarit « Working with components » sous la main : `CLAUDE.md` signale que
-> le schéma de `Components.yml` de ce dépôt a été écrit d'après la documentation et
-> **n'a jamais été validé** contre un panel qui tourne. Diffe le gabarit avec ton
-> fichier avant de t'énerver sur un onglet qui n'apparaît pas.
+> Garde le gabarit « Working with components » (numéro `3`) sous la main. Le
+> `components/` de ce dépôt a été calé dessus, mais cette API a déjà bougé d'une
+> version de Blueprint à l'autre : en cas d'onglet qui refuse d'apparaître, diffe
+> les deux avant de chercher ailleurs.
 
 ---
 
@@ -183,10 +182,10 @@ FATAL: Extension configuration points towards one or more files that do not exis
 | — (racine) | `conf.yml` | ✅ |
 | `requests.app` | `app/` | ✅ |
 | `requests.routers.client` | `routes/client.php` | ✅ |
+| `dashboard.components` | `components/` | ✅ |
 | `info.icon` | `assets/icon.png` | ❌ |
 | `admin.view` | `admin/view.blade.php` | ❌ |
 | `admin.controller` | `admin/AdminController.php` | ❌ |
-| `dashboard.components` | `Components.yml` | ❌ |
 | `data.directory` | `data/` | ❌ |
 | `data.public` | `public/` | ❌ |
 | `database.migrations` | `database/migrations/` | ❌ |
@@ -199,7 +198,7 @@ Deux chemins possibles.
 DEV=/var/www/pterodactyl/.blueprint/dev
 cd "$DEV"
 
-mkdir -p assets admin data public database/migrations resources/scripts
+mkdir -p assets admin data public database/migrations
 
 # Icône : n'importe quel PNG fait l'affaire pour un build de test
 curl -fsSL -o assets/icon.png https://dummyimage.com/64x64/2d2d2d/ffffff.png
@@ -449,28 +448,53 @@ le système de fichiers *et* réécrit la commande de démarrage. Un sous-utilis
 disposant du seul accès console ne doit pas pouvoir détruire un serveur par ce biais.
 Ne l'assouplis pas.
 
-## Ce qui manque encore pour un onglet fonctionnel
+## L'onglet React
 
-Il reste le frontend. Le build passe et l'API répond, mais aucun onglet n'apparaît tant
-que ces deux fichiers n'existent pas :
+`components/Components.yml` déclare une route serveur qui monte
+`components/sections/ModpacksSection.tsx` sur `/modpacks` — soit, dans le panel,
+`/server/<id>/modpacks`.
 
-| Fichier | Rôle |
-|---|---|
-| `Components.yml` | Placement de l'onglet dans les pages serveur |
-| `resources/scripts/ModpacksContainer.tsx` | L'onglet React |
+```yaml
+Navigation:
+  Routes:
+    - { Name: "Modpacks", Path: "/modpacks", Type: "server", Component: "sections/ModpacksSection", AdminOnly: "false" }
+```
 
-Deux points à garder en tête en les écrivant :
+Trois pièges, tous vérifiés contre le gabarit officiel « Working with components »
+([`BlueprintFramework/templates`](https://github.com/BlueprintFramework/templates), dossier `3`) :
 
-- Le schéma de `Components.yml` de ce dépôt **n'a jamais été validé** contre un panel
-  qui tourne (`CLAUDE.md`). Pars du gabarit « Working with components » de
-  `blueprint -init` plutôt que de la documentation.
-- Le composant ne doit contenir **aucun** branchement spécifique à un provider : il
-  consomme `/providers` et traite toutes les entrées de la même façon. C'est la
-  contrepartie de la normalisation faite par `Pack` et `Version` côté PHP.
+1. `dashboard.components` pointe vers le **dossier** `components/`, pas vers
+   `Components.yml`. L'inverse casse le build.
+2. Les valeurs de `Component:` sont relatives à ce dossier et **sans extension**.
+3. Toutes les valeurs sont des chaînes, `AdminOnly: "false"` compris.
 
-Restent aussi ouverts, côté confort plutôt que fonctionnement : la page admin réelle
-(la clé CurseForge se pose encore à la main), le masquage de l'onglet sur les eggs
-non-Minecraft, et le sondage de `/state` pendant l'installation.
+L'onglet ne contient **aucun** branchement spécifique à un provider : il lit
+`/providers` et traite toutes les entrées de la même façon. C'est la contrepartie de
+la normalisation faite par `Pack` et `Version` côté PHP — ajouter un provider reste
+une modification purement backend.
+
+Le bouton d'installation est désactivé si l'utilisateur n'a pas les deux permissions,
+et l'installation passe par une confirmation explicite qui nomme le pack, la version
+et le sort des fichiers existants : l'action est destructive et irréversible depuis
+l'onglet.
+
+`components/tsconfig.json` ne sert qu'à l'outillage d'éditeur. Ses alias `@/` pointent
+vers `.dist/types`, généré par Blueprint **dans le panel** — donc absent de ce dépôt.
+Des erreurs de types dans un éditeur ouvert sur le dépôt seul sont normales.
+
+## Ce qui manque encore
+
+Rien de bloquant. Restent des points de confort :
+
+- La page admin réelle : la clé CurseForge et l'ID de l'egg se posent encore à la main
+  dans `config/modpacks.php` (cf. [D.2](#d2-créer-configmodpacksphp)).
+- L'onglet ne se masque pas sur les eggs non-Minecraft. La logique de filtrage vit dans
+  `resources/scripts/blueprint/extends/routers/ServerRouter.tsx` du dépôt du framework.
+- Pas de sondage de `/state` pendant l'installation : la progression s'observe dans la
+  console du serveur.
+- Les mods bloqués par leur auteur (`allowModDistribution: false`) ne sont pas encore
+  remontés dans l'interface — seulement en `BLOCKED:` dans le log d'installation.
+- FTB, Technic et ATLauncher n'ont pas de provider.
 
 ---
 
@@ -480,7 +504,8 @@ non-Minecraft, et le sondage de `/state` pendant l'installation.
 |---|---|
 | `FATAL: Extension configuration points towards one or more files that do not exist` | Un chemin de `conf.yml` est absent. Le message ne dit pas lequel : bissecte en vidant les bindings (cf. [B.3](#b3-régler-les-bindings-manquants-obligatoire)). |
 | `blueprint -build` : commande inconnue | Mode développement désactivé (cf. [A.5](#a5-activer-le-mode-développement)). |
-| L'onglet n'apparaît pas | 1) Cache navigateur — Ctrl+Shift+R. 2) Schéma de `Components.yml` non validé : diffe avec le gabarit de `blueprint -init`. 3) L'onglet ne se cache pas encore sur les eggs non-Minecraft : c'est un manque connu, pas un bug de placement. |
+| L'onglet n'apparaît pas | 1) Cache navigateur — Ctrl+Shift+R (le panel sert du JS compilé). 2) `dashboard.components` doit valoir `components` (le dossier), pas `components/Components.yml`. 3) Le schéma a déjà changé entre versions de Blueprint : diffe avec le gabarit `3` de `blueprint -init`. |
+| L'onglet apparaît sur un serveur non-Minecraft | Manque connu, pas un bug de placement : le filtrage par egg n'est pas implémenté. |
 | 404 sur les appels API de l'onglet | Le préfixe de route réel diffère de celui codé en dur. Vérifie avec `php artisan route:list \| grep modpacks`. |
 | `CurseForge is not configured` | `config/modpacks.php` absent, ou config non rechargée : `php artisan config:clear`. |
 | Le pack s'installe mais le serveur ne démarre pas | Regarde le log d'installation dans la console du serveur. Les lignes `BLOCKED:` signalent des mods dont l'auteur interdit la redistribution — il n'existe aucun contournement légal, il faut les ajouter à la main. Les lignes `WARN:` signalent un téléchargement échoué. |

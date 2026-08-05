@@ -38,6 +38,8 @@ conf.yml                              # extension manifest (see STRUCTURE.md)
 app/Services/Modpacks/                # Pack, Version, providers, registry, install service
 app/Http/Controllers/Extensions/modpacks/ModpackController.php
 routes/client.php                     # client API endpoints — requests.routers.client
+components/Components.yml             # dashboard.components points at the DIRECTORY
+components/sections/ModpacksSection.tsx   # the tab itself
 egg/install.sh                        # source of truth for the egg script
 egg/egg.template.json                 # egg metadata; script slot is a placeholder
 egg/build_egg.py                      # install.sh + template -> modpack-installer.json
