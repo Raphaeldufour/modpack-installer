@@ -13,7 +13,7 @@ use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 class InstalledModsService
 {
     private const STATE_FILE = '.modpacks-mods-state.json';
-    private const MAX_HASH_BYTES = 134217728;
+    private const MAX_HASH_BYTES = 67108864;
     private const CURSEFORGE_GAME_MINECRAFT = 432;
 
     public function __construct(
@@ -260,48 +260,50 @@ class InstalledModsService
 
     private function curseForgeFingerprint(string $contents): int
     {
-        $normalized = '';
-        $length = strlen($contents);
+        $normalizedLength = 0;
+        $contentsLength = strlen($contents);
 
-        for ($i = 0; $i < $length; $i++) {
-            $byte = ord($contents[$i]);
-            if ($byte !== 9 && $byte !== 10 && $byte !== 13 && $byte !== 32) {
-                $normalized .= $contents[$i];
+        for ($i = 0; $i < $contentsLength; $i++) {
+            if (!$this->isCurseForgeWhitespace(ord($contents[$i]))) {
+                $normalizedLength++;
             }
         }
 
-        return $this->murmurHash2($normalized);
-    }
+        $remaining = $normalizedLength;
+        $hash = 1 ^ $normalizedLength;
+        $chunk = [];
 
-    private function murmurHash2(string $data): int
-    {
-        $length = strlen($data);
-        $hash = 1 ^ $length;
-        $index = 0;
+        for ($i = 0; $i < $contentsLength; $i++) {
+            $byte = ord($contents[$i]);
+            if ($this->isCurseForgeWhitespace($byte)) {
+                continue;
+            }
 
-        while ($length >= 4) {
-            $k = ord($data[$index])
-                | (ord($data[$index + 1]) << 8)
-                | (ord($data[$index + 2]) << 16)
-                | (ord($data[$index + 3]) << 24);
+            $chunk[] = $byte;
 
-            $k = ($k * 0x5bd1e995) & 0xffffffff;
-            $k ^= $this->unsignedRightShift($k, 24);
-            $k = ($k * 0x5bd1e995) & 0xffffffff;
+            if (count($chunk) === 4) {
+                $k = $chunk[0]
+                    | ($chunk[1] << 8)
+                    | ($chunk[2] << 16)
+                    | ($chunk[3] << 24);
 
-            $hash = (($hash * 0x5bd1e995) & 0xffffffff) ^ $k;
+                $k = ($k * 0x5bd1e995) & 0xffffffff;
+                $k ^= $this->unsignedRightShift($k, 24);
+                $k = ($k * 0x5bd1e995) & 0xffffffff;
 
-            $index += 4;
-            $length -= 4;
+                $hash = (($hash * 0x5bd1e995) & 0xffffffff) ^ $k;
+                $chunk = [];
+                $remaining -= 4;
+            }
         }
 
-        switch ($length) {
+        switch ($remaining) {
             case 3:
-                $hash ^= ord($data[$index + 2]) << 16;
+                $hash ^= $chunk[2] << 16;
             case 2:
-                $hash ^= ord($data[$index + 1]) << 8;
+                $hash ^= $chunk[1] << 8;
             case 1:
-                $hash ^= ord($data[$index]);
+                $hash ^= $chunk[0];
                 $hash = ($hash * 0x5bd1e995) & 0xffffffff;
         }
 
@@ -310,6 +312,11 @@ class InstalledModsService
         $hash ^= $this->unsignedRightShift($hash, 15);
 
         return $hash & 0xffffffff;
+    }
+
+    private function isCurseForgeWhitespace(int $byte): bool
+    {
+        return $byte === 9 || $byte === 10 || $byte === 13 || $byte === 32;
     }
 
     private function unsignedRightShift(int $value, int $shift): int
