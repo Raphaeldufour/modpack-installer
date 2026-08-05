@@ -51,11 +51,12 @@ not exist` and does not tell you which one. Bisect by blanking bindings.
 **Unbound files are ignored.** Dropping a `.php` into `app/` does nothing
 unless `requests.app` is set. There is no auto-discovery.
 
-**Declare every conf.yml key, even unused ones.** Leaving a key out is not the
-same as setting it to `''`. Blueprint resolves each key it knows about, and an
-absent one reads back as the string `null`, which is then tested as a filename
-and fails the build — reporting a missing file you never configured. The
-official templates declare the whole set for this reason; copy that shape.
+**Never put a comment at the end of a value line in conf.yml.** Blueprint parses
+that file with a sed/awk helper, not a YAML parser, and it only strips a comment
+that contains no quote character. A lone apostrophe (`# the panel's app tree`)
+glues the entire comment onto the value, the path stops resolving, and the build
+fails naming no file at all. Put comments on their own line, where they are
+always stripped. The official templates use no end-of-line comments.
 
 **`dashboard.components` names a directory, not a file.** It points at the
 folder that *contains* `Components.yml`, and `Component:` values inside that

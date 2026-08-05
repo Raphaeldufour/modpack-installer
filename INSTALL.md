@@ -205,18 +205,38 @@ for p in assets/icon.png admin/view.blade.php admin/AdminController.php \
 done
 ```
 
-> **Le piège qui rend ce `FATAL` déroutant** : une clé **absente** de `conf.yml` n'est
-> pas équivalente à une clé vide. Blueprint résout chaque clé qu'il connaît ; une clé
-> omise revient comme la chaîne `null`, qui est ensuite testée comme un nom de fichier
-> et fait échouer le build — en signalant un fichier manquant que tu n'as jamais
-> configuré. C'est pourquoi le `conf.yml` de ce dépôt déclare **toutes** les clés, les
-> inutilisées à `''`. Si tu en retires une, remets-la à `''` plutôt que de la supprimer.
->
-> **Si le `FATAL` tombe malgré tout**, bissecte : vide toutes les *valeurs*, build, puis
-> remets-les une par une jusqu'à ce que ça repète. Le binding fautif est celui que tu
-> viens de remettre.
->
-> Pour la vérité terrain sur *ta* version de Blueprint, va lire la validation elle-même :
+**Le piège qui rend ce `FATAL` déroutant** : il tombe alors que tous les chemins que
+tu as écrits existent. `conf.yml` n'est pas lu par un parseur YAML mais par
+`scripts/libraries/parse_yaml.sh`, un helper sed/awk. Son retrait des commentaires ne
+s'applique **que si le commentaire ne contient aucune apostrophe ni guillemet**. Une
+seule apostrophe suffit :
+
+```yaml
+  app: 'app'      # copied into the panel's app/ tree
+```
+
+devient la valeur `app'      # copied into the panel's app/ tree`. Le chemin ne résout
+plus, et le build meurt sans nommer le moindre fichier.
+
+**Donc : aucun commentaire en fin de ligne dans `conf.yml`.** Les commentaires sur
+leur propre ligne sont retirés sans risque, quel que soit leur contenu.
+
+Détection immédiate :
+
+```bash
+grep -nE "^[^#]*: *['\"].*['\"] *#" conf.yml && echo "^^ commentaires en fin de ligne : à déplacer"
+```
+
+Deux autres faits tirés de `scripts/commands/extensions/install.sh` :
+
+- `admin.view` est le **seul** binding obligatoire ; tous les autres sont ignorés
+  lorsqu'ils sont vides.
+- `dashboard.components`, `data.directory`, `data.public`, `requests.views`,
+  `requests.app` et `database.migrations` sont testés avec `-d` : ce doivent être des
+  **dossiers**. Les autres sont testés avec `-f`.
+
+> **Si le `FATAL` tombe malgré tout**, va lire la validation de *ta* version — elle fait
+> autorité, et le fichier peut bouger d'une release à l'autre :
 >
 > ```bash
 > F=$(grep -rl "points towards one or more files" /var/www/pterodactyl --include='*.sh' | head -1)

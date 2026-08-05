@@ -1,48 +1,60 @@
+# DO NOT put comments at the end of a value line in this file.
+#
+# Blueprint parses conf.yml with a sed/awk helper (scripts/libraries/parse_yaml.sh),
+# not a real YAML parser. Its comment stripping only fires when the comment
+# contains no quote character, so a single apostrophe — "the panel's app tree" —
+# leaves the whole comment glued onto the value. The path then fails to resolve
+# and the build dies with
+#
+#   FATAL: Extension configuration points towards one or more files that do not exist
+#
+# naming nothing, while every path you actually wrote exists. Comments on their
+# own line, like these, are stripped safely whatever they contain.
+#
+# Note also that admin.view is the only binding Blueprint treats as mandatory;
+# every other one is skipped when left empty.
+
 info:
   name: 'Modpacks'
-  identifier: 'modpacks'          # lowercase alphanumeric only — used everywhere as a namespace
+  identifier: 'modpacks'
   description: 'Browse and install Minecraft modpacks without leaving the panel.'
   flags: ''
   version: '0.1.0'
-  target: '1.11.11'               # the Pterodactyl version you built + tested against
+  target: '1.11.11'
   author: 'you'
   icon: 'assets/icon.png'
   website: ''
 
-# Every key below is declared even when unused, with an empty value.
-#
-# This is not tidiness. Blueprint reads each one out of this file and resolves
-# it as a path; a key that is absent entirely comes back as the string "null"
-# and gets tested as a filename, which fails with
-#
-#   FATAL: Extension configuration points towards one or more files that do not exist
-#
-# naming nothing. Omitting a key is therefore not the same as leaving it empty,
-# and the official templates declare the full set for exactly this reason.
-
+# view: the page where a host sets the CurseForge key and picks the installer egg.
 admin:
-  view: 'admin/view.blade.php'    # where the host sets the CurseForge API key + installer egg
+  view: 'admin/view.blade.php'
   controller: 'admin/AdminController.php'
   css: ''
   wrapper: ''
 
+# components: a DIRECTORY containing Components.yml, not the file itself.
 dashboard:
   css: ''
   wrapper: ''
-  components: 'components'        # a DIRECTORY containing Components.yml, not the file itself
+  components: 'components'
 
+# directory: extension lifecycle hooks (install.sh / update.sh / remove.sh /
+# export.sh). Unrelated to egg/install.sh, which installs a modpack.
 data:
-  directory: 'data'               # install.sh / update.sh / remove.sh live in here
+  directory: 'data'
   public: 'public'
   console: ''
 
+# app: merged into the panel's app/ tree.
+# routers.client: endpoints under the client API, session-authenticated.
 requests:
   views: ''
-  app: 'app'                      # copied into the panel's app/ tree
+  app: 'app'
   routers:
     application: ''
-    client: 'routes/client.php'   # endpoints under the client API, session-authenticated
+    client: 'routes/client.php'
     web: ''
 
+# Empty: configuration lives in the panel's settings table, not in a migration.
 database:
   migrations: 'database/migrations'

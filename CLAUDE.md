@@ -80,11 +80,18 @@ bash -n egg/install.sh    # syntax-check before regenerating the egg
 exist` means a `conf.yml` binding is wrong. It does not say which one — bisect
 by blanking bindings.
 
-The trap: an **omitted** key is not the same as an empty one. Blueprint resolves
-every key it knows about, and a missing one comes back as the string `null`,
-which then fails a file test for a path nobody wrote. Declare the full key set
-and leave unused entries as `''`, the way the official templates do. A `conf.yml`
-whose every declared path exists can still fail this way.
+The real trap, confirmed against `scripts/commands/extensions/install.sh`: the
+message can fire when every path you wrote exists. `conf.yml` is parsed by
+`scripts/libraries/parse_yaml.sh`, a sed/awk helper rather than a YAML parser,
+and its comment stripping only fires when the comment holds no quote character.
+One apostrophe in an end-of-line comment — `# copied into the panel's app/ tree`
+— leaves `app'   # copied into the panel's app/ tree` as the value. So: **no
+end-of-line comments in `conf.yml`.** Own-line comments are always safe.
+
+Also from that file: `admin.view` is the only mandatory binding, every other is
+skipped when empty, and `dashboard.components`, `data.directory`, `data.public`,
+`requests.views`, `requests.app` and `database.migrations` are tested with `-d`
+— they must be directories, the rest files.
 
 ## Unverified — check before trusting
 
