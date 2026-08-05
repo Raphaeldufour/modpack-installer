@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\ModpackController;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\VersionController;
 use Pterodactyl\Http\Middleware\Api\Client\Server\AuthenticateServerAccess;
 
 /*
@@ -46,4 +47,19 @@ Route::group([
 
     Route::post('/install', [ModpackController::class, 'install'])
         ->name('api:client:server.modpacks.install');
+
+    // Versions tab. Kept under /software so it cannot collide with the modpack
+    // routes above, which already own /packs and /versions.
+    Route::get('/software', [VersionController::class, 'software'])
+        ->name('api:client:server.modpacks.software');
+
+    Route::get('/software/versions', [VersionController::class, 'minecraftVersions'])
+        ->name('api:client:server.modpacks.software.versions');
+
+    Route::get('/software/versions/{minecraftVersion}/builds', [VersionController::class, 'builds'])
+        ->where('minecraftVersion', '[A-Za-z0-9._\-]+')
+        ->name('api:client:server.modpacks.software.builds');
+
+    Route::post('/software/install', [VersionController::class, 'install'])
+        ->name('api:client:server.modpacks.software.install');
 });

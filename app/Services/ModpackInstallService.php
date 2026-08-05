@@ -161,31 +161,7 @@ class ModpackInstallService
             ]);
         }
 
-        return self::JAVA_IMAGES[$this->javaMajorFor($gameVersion)];
+        return self::JAVA_IMAGES[JavaVersion::majorFor($gameVersion)];
     }
 
-    /**
-     * Minecraft version -> required Java major.
-     *
-     * 1.20.5 is the cutover to 21, 1.17 the cutover to 17. Everything older
-     * runs on 8. Unrecognised input gets the newest image rather than the
-     * oldest: a modern pack on Java 8 cannot start, whereas the reverse at
-     * least gets far enough to produce a legible error.
-     */
-    private function javaMajorFor(?string $gameVersion): int
-    {
-        if ($gameVersion === null || !preg_match('/^1\.(\d+)(?:\.(\d+))?/', $gameVersion, $matches)) {
-            return 21;
-        }
-
-        $minor = (int) $matches[1];
-        $patch = (int) ($matches[2] ?? 0);
-
-        return match (true) {
-            $minor > 20 => 21,
-            $minor === 20 => $patch >= 5 ? 21 : 17,
-            $minor >= 17 => 17,
-            default => 8,
-        };
-    }
 }

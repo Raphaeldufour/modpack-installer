@@ -28,7 +28,24 @@ HTTP requests with no progress output. Doing it in the install container gives
 the user a live install log in the server console for free.
 
 `DaemonFileRepository` is still fine for small reads/writes (checking whether
-`mods/` exists, reading a manifest) — just not for installing.
+`mods/` exists, reading a manifest) — just not for installing a pack.
+
+**The Versions tab is the other path, and the difference is the workload.**
+Changing server software is one jar: `DaemonFileRepository::pull()` has Wings
+fetch it onto the volume, the panel rewrites the startup command, and nothing
+else on the server is touched — no reinstall, no egg change, worlds and configs
+intact. Read the rule as "a reinstall is for work that needs a process", not as
+"the panel never writes files". Forge and NeoForge do not belong there yet
+precisely because their installers must be executed.
+
+```
+React tab -> client API -> SoftwareRegistry -> Mojang / PaperMC / Purpur / Fabric
+                              |
+                              +-> VersionInstallService
+                                    |- power: kill
+                                    |- DaemonFileRepository::pull()  (Wings downloads)
+                                    +- StartupModificationService (startup + image)
+```
 
 ## Layout
 
@@ -126,6 +143,9 @@ skipped when empty, and `dashboard.components`, `data.directory`, `data.public`,
 
 ## Known gaps
 
+- [ ] Forge and NeoForge in the Versions tab — they ship an installer that has
+      to be run, so they need a mechanism the other four do not
+- [ ] Worlds, Plugins and Mods tabs, all on the Versions tab's file-work path
 - [ ] FTB, Technic, ATLauncher providers
 - [ ] Surface CurseForge `allowModDistribution: false` blocks in the UI —
       currently only logged as `BLOCKED:` in the install log, which silently

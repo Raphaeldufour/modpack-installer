@@ -426,6 +426,10 @@ réserves de préfixe évoquées en [B.5](#b5-vérifier)) :
 
 | Méthode | Chemin | Permission | Rôle |
 |---|---|---|---|
+| `GET` | `…/servers/{server}/software` | accès au serveur | Logiciels serveur disponibles |
+| `GET` | `…/servers/{server}/software/versions?software=` | accès au serveur | Versions Minecraft |
+| `GET` | `…/servers/{server}/software/versions/{v}/builds?software=` | accès au serveur | Builds d'une version |
+| `POST` | `…/servers/{server}/software/install` | `startup.update` **+** `file.delete` | Change le server.jar |
 | `GET` | `…/servers/{server}/providers` | accès au serveur | Liste des providers |
 | `GET` | `…/servers/{server}/packs?provider=&query=&page=` | accès au serveur | Recherche de packs |
 | `GET` | `…/servers/{server}/packs/{pack}/versions?provider=` | accès au serveur | Versions d'un pack |
