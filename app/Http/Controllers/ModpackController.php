@@ -95,7 +95,7 @@ class ModpackController extends Controller
     }
 
     /**
-     * Switch the server onto the installer egg and reinstall it.
+     * Install a pack onto the server, in place.
      */
     public function install(Request $request, Server $server): JsonResponse
     {
@@ -111,7 +111,7 @@ class ModpackController extends Controller
             'wipe' => 'nullable|boolean',
         ]);
 
-        $this->installService->handle(
+        $notes = $this->installService->handle(
             $server,
             $data['provider'],
             $data['pack'],
@@ -119,9 +119,7 @@ class ModpackController extends Controller
             $request->boolean('wipe', true),
         );
 
-        // 202: Wings has been asked to reinstall, and the work happens in the
-        // install container. Progress shows up in the server console.
-        return new JsonResponse(['data' => ['status' => 'installing']], JsonResponse::HTTP_ACCEPTED);
+        return new JsonResponse(['data' => ['status' => 'installed', 'notes' => $notes]]);
     }
 
     private function authorizeInstall(Request $request, Server $server): void

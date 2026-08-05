@@ -3,49 +3,37 @@
 Blueprint extension for Pterodactyl adding a **Modpacks** tab to server pages:
 browse packs from several providers, pick a version, install in one click.
 
-## Non-negotiable architecture
+## Architecture
 
-The panel does **no file work**. It is a browser and a dispatcher.
+The panel resolves, Wings transfers, the server runs it. Nothing is installed by
+the panel itself and nothing goes through an installer egg.
 
 ```
-React tab -> client API -> ProviderRegistry -> Modrinth / CurseForge REST
+React tab -> client API -> ProviderRegistry  -> Modrinth / CurseForge REST
+                        \-> SoftwareRegistry -> Mojang / PaperMC / Purpur / Fabric
                               |
-                              +-> ModpackInstallService
+                              +-> Install service
                                     |- power: kill
-                                    |- StartupModificationService (egg + variables)
-                                    +- DaemonServerRepository::reinstall()
-                                                |
-                                                v
-                                    egg/install.sh runs in the install
-                                    container and does the real work
-```
-
-If you find yourself reaching for `DaemonFileRepository::pull()` or
-`decompress()` to install a pack, stop. That path was considered and rejected:
-a modpack is a manifest, not a zip, so it needs per-mod downloads, a loader
-install and a rewritten startup command. Doing that from PHP means minutes-long
-HTTP requests with no progress output. Doing it in the install container gives
-the user a live install log in the server console for free.
-
-`DaemonFileRepository` is still fine for small reads/writes (checking whether
-`mods/` exists, reading a manifest) — just not for installing a pack.
-
-**The Versions tab is the other path, and the difference is the workload.**
-Changing server software is one jar: `DaemonFileRepository::pull()` has Wings
-fetch it onto the volume, the panel rewrites the startup command, and nothing
-else on the server is touched — no reinstall, no egg change, worlds and configs
-intact. Read the rule as "a reinstall is for work that needs a process", not as
-"the panel never writes files". Forge and NeoForge do not belong there yet
-precisely because their installers must be executed.
-
-```
-React tab -> client API -> SoftwareRegistry -> Mojang / PaperMC / Purpur / Fabric
-                              |
-                              +-> VersionInstallService
-                                    |- power: kill
-                                    |- DaemonFileRepository::pull()  (Wings downloads)
+                                    |- DaemonFileRepository::pull()      (Wings downloads)
+                                    |- DaemonFileRepository::decompressFile()
                                     +- StartupModificationService (startup + image)
 ```
+
+The rule is that **the panel never moves a payload itself**. It resolves a URL
+and hands it to Wings, which fetches it onto the volume directly, so a 400MB
+pack costs one short API call rather than a request held open for minutes. Small
+writes — `putContent` for a startup script, `getDirectory` before a wipe — are
+fine and always were.
+
+A server keeps whichever egg it has. The egg is a Java container and a default
+command; installs rewrite the startup command instead of switching eggs, which
+is what lets Versions, Modpacks and the tabs still to come share one mechanism.
+
+**What the panel cannot do is run a process.** Forge and NeoForge publish an
+installer that has to be executed before there is a server to launch. Where a
+pack ships one, the generated `start.sh` runs it on first boot — in the server
+console, where the user is already looking. That is also why Forge and NeoForge
+have no `SoftwareInterface` in the Versions tab yet.
 
 ## Layout
 
@@ -64,7 +52,6 @@ here must also be bound in `conf.yml` or the build silently ignores it.
 | `data/` | `data.directory` — extension lifecycle hooks, must exit 0 |
 | `public/` | `data.public` — bound but empty |
 | `database/migrations/` | `database.migrations` — empty; config lives in `settings` |
-| `egg/` | **not part of the extension** — imported separately by the admin |
 
 ## Conventions
 
@@ -91,8 +78,6 @@ here must also be bound in `conf.yml` or the build silently ignores it.
 - Configuration is read through `ModpackSettings`, never with `config()` at the
   call site. It resolves the admin page's settings first and falls back to
   `config/modpacks.php` for panels configured before that page existed.
-- Edit `egg/install.sh` and run `python3 egg/build_egg.py` to regenerate
-  `egg/modpack-installer.json`. Never hand-edit the JSON.
 
 ## Build loop
 
@@ -101,7 +86,6 @@ cd /var/www/pterodactyl
 blueprint -build          # compile dev extension into the live panel
 blueprint -export         # produce a distributable .blueprint file
 php artisan route:list | grep modpacks   # verify the client route prefix
-bash -n egg/install.sh    # syntax-check before regenerating the egg
 ```
 
 `FATAL: Extension configuration points towards one or more files that do not
@@ -147,12 +131,13 @@ skipped when empty, and `dashboard.components`, `data.directory`, `data.public`,
       to be run, so they need a mechanism the other four do not
 - [ ] Worlds, Plugins and Mods tabs, all on the Versions tab's file-work path
 - [ ] FTB, Technic, ATLauncher providers
-- [ ] Surface CurseForge `allowModDistribution: false` blocks in the UI —
-      currently only logged as `BLOCKED:` in the install log, which silently
-      yields a broken pack
+- [ ] Manifest packs — Modrinth `.mrpack` and CurseForge files without a
+      published server pack — need their mods fetched one at a time, which is
+      the next piece of work. They are refused with an explanation for now
+- [ ] Surface CurseForge `allowModDistribution: false` blocks in the UI
 - [ ] Hide the tab on non-Minecraft eggs (mirror the framework's
       `ServerRouter.tsx` egg-filtering logic)
-- [ ] Poll `/state` during install so the tab reflects progress
+- [ ] Progress reporting during install; the request is synchronous today
 - [ ] Offer a backup before wiping
 
 ## Testing

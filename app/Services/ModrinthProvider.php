@@ -68,4 +68,48 @@ class ModrinthProvider implements ProviderInterface
             ))->toArray(), $versions);
         });
     }
+
+    /**
+     * A .mrpack is a zip holding modrinth.index.json plus overrides — a
+     * manifest, not a server. The mods it names are fetched afterwards.
+     */
+    public function installPlan(string $packId, string $versionId): InstallPlan
+    {
+        $version = Cache::remember("modpacks:modrinth:version:$versionId", 300, fn () => $this->client()
+            ->get(self::BASE . "/version/{$versionId}")
+            ->throw()
+            ->json());
+
+        $url = null;
+        foreach ($version['files'] ?? [] as $file) {
+            if ($file['primary'] ?? false) {
+                $url = $file['url'];
+                break;
+            }
+        }
+
+        if ($url === null) {
+            throw new \RuntimeException('This Modrinth version publishes no primary file.');
+        }
+
+        // The loader is whichever dependency key is present; Modrinth names them
+        // fabric-loader and quilt-loader, forge and neoforge plain.
+        $loader = null;
+        $loaderVersion = null;
+        foreach (['fabric-loader', 'quilt-loader', 'neoforge', 'forge'] as $key) {
+            if (!empty($version['dependencies'][$key] ?? null)) {
+                $loader = str_replace('-loader', '', $key);
+                $loaderVersion = $version['dependencies'][$key];
+                break;
+            }
+        }
+
+        return new InstallPlan(
+            archiveUrl: $url,
+            selfContained: false,
+            minecraftVersion: $version['dependencies']['minecraft'] ?? ($version['game_versions'][0] ?? null),
+            loader: $loader,
+            loaderVersion: $loaderVersion,
+        );
+    }
 }

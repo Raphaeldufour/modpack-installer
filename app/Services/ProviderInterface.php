@@ -13,4 +13,13 @@ interface ProviderInterface
 
     /** @return array[] Version::toArray() results */
     public function versions(string $packId): array;
+
+    /**
+     * Resolve one version into something installable.
+     *
+     * All provider-specific knowledge about how a pack is packaged lives behind
+     * this call, so the install service never learns which provider it is
+     * serving.
+     */
+    public function installPlan(string $packId, string $versionId): InstallPlan;
 }

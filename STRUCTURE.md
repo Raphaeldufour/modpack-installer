@@ -72,6 +72,6 @@ admin route (`/admin/extensions/modpacks`), your public asset path, your
 filesystem disk (`blueprint:modpacks`), and the controller namespace. Changing
 it later means renaming directories in several places, so pick it once.
 
-**`data/` scripts are for the extension, not the modpack.** `install.sh` here
+**`data/` scripts are for the extension, not for a server.** `install.sh` here
 runs when a panel admin installs *your extension* — seeding config, checking
-dependencies. It has nothing to do with the egg's install script.
+dependencies. It never touches a game server.

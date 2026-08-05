@@ -5,7 +5,7 @@ Ce document couvre les deux sens de « installer le blueprint » :
 - **[Partie A](#partie-a--installer-le-framework-blueprint)** — installer le framework Blueprint sur le panel.
 - **[Partie B](#partie-b--installer-cette-extension-en-mode-développement)** — installer *cette* extension en mode développement (le cas de ce dépôt).
 - **[Partie C](#partie-c--empaqueter-et-installer-un-fichier-blueprint)** — empaqueter en `.blueprint` et l'installer sur un autre panel.
-- **[Partie D](#partie-d--importer-legg-installeur)** — importer l'egg installeur et le configurer.
+- **[Partie D](#partie-d--configurer-lextension)** — configurer la clé CurseForge.
 
 > **Avertissement, à lire avant de commencer.**
 > `blueprint -build` écrit **directement** dans l'installation live du panel. Un build
@@ -32,7 +32,7 @@ Ce document couvre les deux sens de « installer le blueprint » :
 | Accès | `root` ou `sudo` sur la machine du panel |
 | Chemin du panel | `/var/www/pterodactyl` dans tout ce document |
 | Outils | `curl`, `unzip`, `git`, `zip`, `python3` |
-| Wings | Un nœud fonctionnel — l'installation d'un modpack passe par un conteneur d'installation |
+| Wings | Un nœud fonctionnel — c'est Wings qui télécharge et décompresse les packs |
 | Optionnel | Une clé API CurseForge (Modrinth n'en demande aucune) |
 
 Vérifie la version du panel avant de commencer :
@@ -139,15 +139,13 @@ git clone https://github.com/raphaeldufour/modpack-installer.git ~/modpack-insta
 ### B.2 Copier les fichiers dans le dossier dev
 
 La racine de ce dépôt **est** la racine de l'extension : `conf.yml` doit se retrouver
-directement dans `.blueprint/dev/`. Le dossier `egg/` fait exception — il n'est pas
-livré avec l'extension, il s'importe séparément (voir [Partie D](#partie-d--importer-legg-installeur)).
+directement dans `.blueprint/dev/`.
 
 ```bash
 DEV=/var/www/pterodactyl/.blueprint/dev
 
 rsync -a --delete \
   --exclude '.git' \
-  --exclude 'egg' \
   --exclude '*.md' \
   ~/modpack-installer/ "$DEV/"
 
@@ -252,9 +250,8 @@ Deux autres faits tirés de `scripts/commands/extensions/install.sh` :
 > ```
 
 > Les scripts de `data/` tournent à l'installation de **l'extension** (ils affichent
-> les étapes de configuration) et n'ont rien à voir avec `egg/install.sh`, qui installe
-> un modpack dans un serveur. Ils doivent tous sortir en `exit 0` : un code non nul
-> fait échouer l'installation de l'extension.
+> les étapes de configuration) et ne touchent jamais un serveur de jeu. Ils doivent
+> tous sortir en `exit 0` : un code non nul fait échouer l'installation de l'extension.
 
 ### B.4 Construire
 
@@ -324,98 +321,37 @@ blueprint -remove modpacks
 
 ---
 
-## Partie D — importer l'egg installeur
+## Partie D — configurer l'extension
 
-L'extension ne télécharge aucun fichier elle-même : elle bascule le serveur sur un egg
-dédié, met à jour ses variables, puis déclenche une réinstallation. C'est le script
-d'installation de cet egg qui fait le vrai travail, dans le conteneur d'installation —
-d'où un log d'installation en direct dans la console du serveur.
+Il n'y a **plus d'egg à importer**. Le serveur garde l'egg qu'il a déjà : le panel
+résout le pack, fait télécharger et décompresser par Wings, pose le bon `server.jar`
+et réécrit la commande de démarrage.
 
-### D.1 Importer l'egg
+Un seul réglage, sur **Admin → Extensions → Modpacks** : la **clé API CurseForge**,
+nécessaire uniquement pour les packs CurseForge. Modrinth et tous les logiciels
+serveur de l'onglet Versions n'en demandent aucune — commence par là.
 
-1. Panel → **Admin** → **Nests** → choisir ou créer un nest (ex. `Minecraft`).
-2. **Import Egg** → envoyer [`egg/modpack-installer.json`](egg/modpack-installer.json).
-3. C'est tout : la page admin de l'étape suivante liste les eggs et te laisse
-   sélectionner celui-ci. (Son ID reste visible dans l'URL `/admin/nests/egg/<ID>` si
-   tu configures par fichier plutôt que par l'interface.)
+Une clé s'obtient sur <https://console.curseforge.com/>.
 
-### D.2 Configurer l'extension
-
-Rends-toi sur **Admin → Extensions → Modpacks**. Deux réglages :
-
-- **CurseForge API key** — nécessaire uniquement pour les packs CurseForge. Une clé
-  s'obtient sur <https://console.curseforge.com/>.
-- **Installer egg** — la liste déroulante des eggs du panel, groupée par nest.
-  Sélectionne celui importé en [D.1](#d1-importer-legg). Plus besoin de relever son ID
-  à la main.
-
-Le bouton **Apply Changes** n'apparaît qu'une fois un champ modifié.
-
-> **Modrinth ne demande aucune clé.** Tu peux laisser le champ CurseForge vide et
-> valider toute la chaîne avec Modrinth — c'est le chemin le plus rapide.
->
-> Choisir le mauvais egg est destructeur : les serveurs sont basculés dessus puis
-> réinstallés. Vérifie que tu sélectionnes bien « Modpack Installer ».
->
-> La clé est un **secret serveur**. Elle ne quitte jamais le panel vers un navigateur
-> (c'est toute la raison du proxy sur les providers), mais elle est écrite dans
-> l'environnement du serveur installé, car `install.sh` tourne dans un conteneur qui
-> n'a pas accès aux réglages du panel. La variable d'egg est en `user_viewable: false`.
+> La clé reste côté serveur. Les appels aux providers transitent par le panel, et les
+> téléchargements sont confiés à Wings sous forme d'URL déjà résolues : elle n'atteint
+> jamais un navigateur, et n'est plus écrite dans l'environnement d'un serveur.
 
 <details>
-<summary>Alternative : <code>config/modpacks.php</code> (panels installés avant la page admin)</summary>
+<summary>Alternative : <code>config/modpacks.php</code> (panels configurés avant la page admin)</summary>
 
-Les réglages de la page admin ont la priorité. Si un champ est laissé vide, l'extension
-retombe sur ce fichier, ce qui évite de casser un panel déjà configuré ainsi :
+Le réglage de la page admin a la priorité ; si le champ est vide, l'extension retombe
+sur `curseforge_api_key` de ce fichier.
 
-```bash
-cat > /var/www/pterodactyl/config/modpacks.php <<'PHP'
+```php
 <?php
 
 return [
     'curseforge_api_key' => env('CURSEFORGE_API_KEY'),
-    'installer_egg_id' => (int) env('MODPACK_INSTALLER_EGG_ID'),
 ];
-PHP
 ```
-
-Puis dans `/var/www/pterodactyl/.env` :
-
-```dotenv
-CURSEFORGE_API_KEY=ta-cle-curseforge
-MODPACK_INSTALLER_EGG_ID=42
-```
-
-Et recharge la config :
-
-```bash
-cd /var/www/pterodactyl
-php artisan config:clear
-php artisan config:cache
-```
-
-Ne commite pas `config/modpacks.php` (il est déjà dans `.gitignore`). La page admin
-signale quand une valeur provient encore de ce fichier.
 
 </details>
-
-### D.3 Modifier le script d'installation de l'egg
-
-`egg/install.sh` est la **source de vérité**. Le JSON de l'egg n'est qu'un produit
-dérivé (le script y est encapsulé dans une chaîne échappée, illisible en revue).
-
-```bash
-cd ~/modpack-installer
-$EDITOR egg/install.sh
-bash -n egg/install.sh        # contrôle de syntaxe — toujours avant de régénérer
-python3 egg/build_egg.py      # régénère egg/modpack-installer.json
-```
-
-Puis réimporte le JSON dans le panel (Admin → l'egg → **Import**, en écrasant).
-
-**Ne modifie jamais `egg/modpack-installer.json` à la main** : `build_egg.py` l'écrase
-sans prévenir. Les métadonnées de l'egg (variables, images Docker, commande de
-démarrage) se modifient dans `egg/egg.template.json`.
 
 ---
 
@@ -529,13 +465,16 @@ Rien de bloquant. Restent des points de confort :
 
 | Symptôme | Cause probable et remède |
 |---|---|
+| `This pack ships a manifest rather than a ready-made server` | Attendu : les packs à manifeste (`.mrpack` Modrinth, fichiers CurseForge sans server pack publié) exigent de télécharger les mods un par un, ce qui n'est pas encore implémenté. Choisis une version dont l'éditeur fournit un server pack. |
+
+| Symptôme | Cause probable et remède |
+|---|---|
 | `FATAL: Extension configuration points towards one or more files that do not exist` | Un chemin de `conf.yml` est absent — typiquement une copie incomplète vers `.blueprint/dev/`. Le message ne dit pas lequel : lance le contrôle de [B.3](#b3-vérifier-les-bindings), puis bissecte en vidant les bindings. |
 | `blueprint -build` : commande inconnue | Mode développement désactivé (cf. [A.5](#a5-activer-le-mode-développement)). |
 | L'onglet n'apparaît pas | 1) Cache navigateur — Ctrl+Shift+R (le panel sert du JS compilé). 2) `dashboard.components` doit valoir `components` (le dossier), pas `components/Components.yml`. 3) Le schéma a déjà changé entre versions de Blueprint : diffe avec le gabarit `3` de `blueprint -init`. |
 | L'onglet apparaît sur un serveur non-Minecraft | Manque connu, pas un bug de placement : le filtrage par egg n'est pas implémenté. |
 | `The route api/client/... could not be found` dans l'onglet | Le préfixe codé en dur ne correspond pas à celui monté. La base est `/api/client/extensions/modpacks`, pas `/api/client`. Vérifie avec `php artisan route:list \| grep modpacks`. |
 | `CurseForge is not configured` | Aucune clé enregistrée : **Admin → Extensions → Modpacks**. Si tu configures par fichier, `config/modpacks.php` est absent ou la config n'a pas été rechargée (`php artisan config:clear`). |
-| `The modpack installer egg has not been configured` | Aucun egg sélectionné sur la page admin, ou l'egg choisi a été supprimé depuis. |
 | `JSX value should be either an expression or a quoted JSX text` pendant `Rebuilding panel assets` | Un placeholder Blueprint a été substitué dans le JSX (`value={version}` → `value=0.1.0`). Renomme la variable ou échappe-la en `!{version}` (cf. [L'onglet React](#longlet-react)). Le build Blueprint affiche quand même `SUCCESS` : c'est la compilation des assets qui a échoué, pas l'installation. |
 | `Class "Pterodactyl\…\ModpackController" not found` | Le namespace de `app/` doit être `Pterodactyl\BlueprintFramework\Extensions\modpacks\…` — c'est là que Blueprint symlinke `requests.app`. |
 | La page admin renvoie une 500 | Le nom de classe `modpacksExtensionController` est dérivé de `info.identifier` par Blueprint. Compare avec le gabarit `2` (« Admin configuration ») de `blueprint -init` pour ta version. |
@@ -543,7 +482,7 @@ Rien de bloquant. Restent des points de confort :
 | `curl: (22)` avec un 403 | Clé API CurseForge absente ou invalide (**Admin → Extensions → Modpacks**). |
 | `curl: (23) Failure writing output to destination` dans le log d'installation | Disque plein pendant le téléchargement. Historiquement `/tmp` : Wings y monte un tmpfs de **100 Mo par défaut** (`docker.tmpfs_size`), très en dessous de la taille d'un modpack. Le script travaille désormais dans `/mnt/server`. Si ça persiste, c'est la **limite de disque du serveur** qui est trop basse — l'archive et son contenu décompressé doivent y tenir tous les deux. |
 | `bash: start.sh: No such file or directory`, exit 127 | Le script d'installation est mort avant d'écrire `start.sh`. La cause réelle est dans le log d'**installation**, pas dans la console. |
-| `Invalid maximum heap size: -Xmx0M` | `SERVER_MEMORY` vaut `0`, ce qui dans Pterodactyl signifie **mémoire illimitée** — pas « zéro ». Le `start.sh` généré résout désormais la mémoire au démarrage et n'écrit aucun `-Xmx` dans ce cas, laissant la JVM choisir. |
+| `Invalid maximum heap size: -Xmx0M` | `SERVER_MEMORY` vaut `0`, ce qui dans Pterodactyl signifie **mémoire illimitée** — pas « zéro ». Les commandes générées utilisent `-XX:MaxRAMPercentage` dans ce cas, jamais `-Xmx0M`. |
 | Changer la limite mémoire dans le panel ne change rien | Ne devrait plus arriver : la mémoire est lue au démarrage, plus figée à l'installation. Un simple redémarrage suffit, sans réinstaller. Pour forcer une autre valeur, ajoute ton `-Xmx` dans `user_jvm_args.txt` : il est prioritaire. |
 | Le pack s'installe, mais son propre `startserver.sh` / `ServerStart.sh` traîne à côté | Normal, et il ne faut **pas** s'en servir comme commande de démarrage : ces lanceurs enveloppent le serveur dans leur propre boucle `while true`, ce qui vole la gestion du processus au panel et casse le bouton Stop. Le script d'installation exécute l'installeur de loader à sa place et génère un `start.sh` qui lance le serveur directement. |
 | Le pack s'installe mais le serveur ne démarre pas | Regarde le log d'installation dans la console du serveur. Les lignes `BLOCKED:` signalent des mods dont l'auteur interdit la redistribution — il n'existe aucun contournement légal, il faut les ajouter à la main. Les lignes `WARN:` signalent un téléchargement échoué. |
@@ -564,7 +503,4 @@ blueprint -install modpacks.blueprint     # installer un paquet
 blueprint -remove modpacks                # désinstaller
 php artisan route:list | grep modpacks    # vérifier le préfixe des routes client
 
-cd ~/modpack-installer
-bash -n egg/install.sh                    # vérifier la syntaxe avant de régénérer
-python3 egg/build_egg.py                  # régénérer egg/modpack-installer.json
 ```

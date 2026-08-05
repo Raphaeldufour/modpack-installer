@@ -7,7 +7,6 @@
 namespace Pterodactyl\Http\Controllers\Admin\Extensions\modpacks;
 
 use Illuminate\View\View;
-use Pterodactyl\Models\Egg;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\Factory as ViewFactory;
 use Pterodactyl\Http\Controllers\Controller;
@@ -37,21 +36,14 @@ class modpacksExtensionController extends Controller
         // config-file fallback would resolve to. The fallback is surfaced
         // separately below so the admin can see it is in play.
         $storedKey = (string) $this->blueprint->dbGet('modpacks', 'curseforge_api_key');
-        $storedEgg = (string) $this->blueprint->dbGet('modpacks', 'installer_egg_id');
 
         return $this->view->make('admin.extensions.modpacks.index', [
             'curseforge_api_key' => $storedKey,
-            'installer_egg_id' => $storedEgg,
-
-            // Grouped in the view, so the host can find the imported egg by its
-            // nest instead of scanning one long flat list.
-            'eggs' => Egg::query()->with('nest')->orderBy('name')->get(),
 
             // config/modpacks.php is still honoured when a field is left blank.
             // Saying so avoids the "I cleared the key but CurseForge still
             // works" confusion.
             'legacyKey' => $storedKey === '' && !empty(config('modpacks.curseforge_api_key')),
-            'legacyEgg' => $storedEgg === '' ? (int) config('modpacks.installer_egg_id') : 0,
 
             'root' => '/admin/extensions/modpacks',
             'blueprint' => $this->blueprint,
@@ -80,11 +72,6 @@ class modpacksSettingsFormRequest extends AdminFormRequest
             // Left blank on purpose by hosts who only use Modrinth, which needs
             // no credentials at all.
             'curseforge_api_key' => 'nullable|string|max:200',
-
-            // exists: catches the common mistake of typing an egg id that was
-            // read off the wrong admin page, which otherwise only shows up as a
-            // failed install much later.
-            'installer_egg_id' => 'nullable|integer|exists:eggs,id',
         ];
     }
 
@@ -92,7 +79,6 @@ class modpacksSettingsFormRequest extends AdminFormRequest
     {
         return [
             'curseforge_api_key' => 'CurseForge API key',
-            'installer_egg_id' => 'Installer egg',
         ];
     }
 }

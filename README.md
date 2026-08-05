@@ -5,33 +5,30 @@ providers, pick a version, install in one click.
 
 ## Architecture
 
-The panel does **no file work**. It is a browser and a dispatcher:
+The panel resolves, Wings transfers, the server runs it:
 
 ```
-React tab ──> client API ──> ProviderRegistry ──> Modrinth / CurseForge API
+React tab ──> client API ──> providers ──> Modrinth / CurseForge / Mojang / Paper / …
                                   │
-                                  └─> ModpackInstallService
+                                  └─> install service
                                         ├─ power: kill
-                                        ├─ StartupModificationService (egg + vars)
-                                        └─ DaemonServerRepository::reinstall()
-                                                    │
-                                                    ▼
-                                          egg/install.sh in the
-                                          install container does
-                                          the actual download,
-                                          loader install, unpack
+                                        ├─ DaemonFileRepository::pull()  (Wings downloads)
+                                        ├─ DaemonFileRepository::decompressFile()
+                                        └─ StartupModificationService (startup + image)
 ```
 
-This is the same approach the commercial addons take, and it buys you a lot:
-no Wings modifications, install progress streams to the server console for
-free, reinstall/rebuild behave as users already expect, and no PHP request
-ever has to stay open for a 3 GB pack.
+No installer egg and no reinstall. A server keeps whichever egg it has — the egg
+is a Java container and a default command — and an install rewrites the startup
+command instead. That is what lets the Versions and Modpacks tabs, and the
+Worlds, Plugins and Mods tabs to come, share one mechanism.
+
+The panel never moves a payload itself: it hands Wings a URL, so a 400MB pack
+costs one short API call rather than a request held open for minutes.
 
 ## Repository layout
 
 The repository root **is** the extension root: its contents map 1:1 onto
-`/var/www/pterodactyl/.blueprint/dev/`. `egg/` is the exception — it is imported
-separately by an admin and is not shipped with the extension.
+`/var/www/pterodactyl/.blueprint/dev/`.
 
 ```
 conf.yml                              # extension manifest (see STRUCTURE.md)
@@ -41,14 +38,10 @@ app/Http/Controllers/ModpackController.php
 routes/client.php                     # client API endpoints — requests.routers.client
 components/Components.yml             # dashboard.components points at the DIRECTORY
 components/sections/ModpacksSection.tsx   # the tab itself
-admin/                                # admin.view + admin.controller — CF key, egg picker
+admin/                                # admin.view + admin.controller — CurseForge key
 assets/icon.png                       # info.icon
-data/*.sh                             # extension lifecycle hooks (not the egg's)
+data/*.sh                             # extension lifecycle hooks
 public/ database/migrations/          # bound but empty; settings live in the panel's table
-egg/install.sh                        # source of truth for the egg script
-egg/egg.template.json                 # egg metadata; script slot is a placeholder
-egg/build_egg.py                      # install.sh + template -> modpack-installer.json
-egg/modpack-installer.json            # GENERATED — never hand-edit
 INSTALL.md STRUCTURE.md CLAUDE.md     # docs, not deployed
 ```
 
@@ -59,27 +52,25 @@ version:
 
 1. Install Blueprint on a **test** panel. Never develop against production.
 2. Turn on developer mode at `/admin/extensions` → Blueprint → `developer: true`.
-3. `blueprint -init`, pick a template, then drop this repository (minus `egg/`)
-   into `/var/www/pterodactyl/.blueprint/dev/`.
+3. `blueprint -init`, pick a template, then drop this repository into `/var/www/pterodactyl/.blueprint/dev/`.
 4. Check every path bound in `conf.yml` survived the copy — `-build` aborts
    without saying which one is missing. See `INSTALL.md` §B.3.
-5. Import `egg/modpack-installer.json` in the admin area.
-6. `blueprint -build`, then hard-refresh the panel.
-7. Set the CurseForge key and pick the installer egg at
-   **Admin → Extensions → Modpacks**. Modrinth needs neither, so you can skip
-   this entirely to try it out.
+5. `blueprint -build`, then hard-refresh the panel.
+6. Set a CurseForge key at **Admin → Extensions → Modpacks** if you want
+   CurseForge packs. Modrinth and every server software need nothing, so you can
+   skip this entirely to try it out.
 
 ## Things that will bite you
 
-**CurseForge redistribution.** Many mods set `allowModDistribution: false`;
-the download-url endpoint returns null and there is no legal workaround. The
-script logs `BLOCKED:` and continues, which produces a subtly broken pack.
-Prefer `serverPackFileId` when the publisher provides one, and surface blocked
-mods in the UI rather than failing silently.
+**CurseForge redistribution.** Many mods set `allowModDistribution: false` and
+the download-url endpoint returns null, with no legal workaround. This is why
+the installer prefers `serverPackFileId`: a publisher's server pack is one
+archive that sidesteps per-mod redistribution entirely.
 
-**Modrinth `.mrpack` is not a server pack.** It is a manifest. You must filter
-`env.server != "unsupported"` or you will ship client-only mods that crash the
-server on boot, and `server-overrides/` must be applied *after* `overrides/`.
+**Modrinth `.mrpack` is not a server pack.** It is a manifest, so it needs its
+mods fetched one at a time — not yet supported, and refused with an explanation.
+When it lands, filter `env.server != "unsupported"` or you will ship client-only
+mods that crash the server, and apply `server-overrides/` *after* `overrides/`.
 
 **Rate limits.** Modrinth wants a real User-Agent and will throttle you.
 CurseForge keys are per-application. The 5-minute cache in the providers is the
@@ -103,7 +94,7 @@ repo and you can mirror it.
 
 ## Next providers
 
-Each one only needs `search()` and `versions()`; the install path is shared.
+Each one needs `search()`, `versions()` and `installPlan()`; the install path is shared.
 
 | Provider | API | Notes |
 |---|---|---|

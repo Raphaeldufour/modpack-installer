@@ -31,11 +31,6 @@ class ModpackSettings
         return trim((string) $this->get('curseforge_api_key', config('modpacks.curseforge_api_key')));
     }
 
-    public function installerEggId(): int
-    {
-        return (int) $this->get('installer_egg_id', config('modpacks.installer_egg_id'));
-    }
-
     public function hasCurseForgeApiKey(): bool
     {
         return $this->curseForgeApiKey() !== '';
