@@ -13,6 +13,7 @@ use Pterodactyl\Exceptions\DisplayException;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\ModInstallService;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\ModProviderInterface;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\ModProviderRegistry;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\InstalledModsService;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class ModController extends Controller
@@ -22,6 +23,7 @@ class ModController extends Controller
     public function __construct(
         private ModProviderRegistry $registry,
         private ModInstallService $installService,
+        private InstalledModsService $installedModsService,
     ) {
     }
 
@@ -98,6 +100,17 @@ class ModController extends Controller
         );
 
         return new JsonResponse(['data' => ['status' => 'installed', 'filename' => $filename]]);
+    }
+
+    public function installed(Request $request, Server $server): JsonResponse
+    {
+        if (!$request->user()->can(Permission::ACTION_FILE_READ, $server)) {
+            throw new AccessDeniedHttpException(
+                'Listing installed mods requires the file.read permission.'
+            );
+        }
+
+        return new JsonResponse(['data' => $this->installedModsService->list($server)]);
     }
 
     private function authorizeInstall(Request $request, Server $server): void

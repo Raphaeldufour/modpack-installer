@@ -52,6 +52,9 @@ Route::group([
     Route::get('/mods/providers', [ModController::class, 'providers'])
         ->name('api:client:server.modpacks.mods.providers');
 
+    Route::get('/mods/installed', [ModController::class, 'installed'])
+        ->name('api:client:server.modpacks.mods.installed');
+
     Route::get('/mods', [ModController::class, 'search'])
         ->name('api:client:server.modpacks.mods.search');
 

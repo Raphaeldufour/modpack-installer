@@ -26,6 +26,19 @@ interface Version {
     loader: string | null;
 }
 
+interface InstalledMod {
+    path: string;
+    provider: string | null;
+    project_id: string | null;
+    project_name: string;
+    version_id: string | null;
+    version_name: string;
+    icon_url: string | null;
+    size: number | null;
+    recognized: boolean;
+    reason?: string;
+}
+
 const loaders = [
     { key: '', label: 'Any loader' },
     { key: 'fabric', label: 'Fabric' },
@@ -43,7 +56,7 @@ const compact = (value: number): string => {
 
 const ModsSection = () => {
     const uuid = ServerContext.useStoreState((state) => state.server.data!.uuid);
-    const [canCreateFiles] = usePermissions(['file.create']);
+    const [canCreateFiles, canReadFiles] = usePermissions(['file.create', 'file.read']);
     const base = `/api/client/extensions/modpacks/servers/${uuid}`;
 
     const [providers, setProviders] = useState<Provider[]>([]);
@@ -60,8 +73,21 @@ const ModsSection = () => {
     const [loadingVersions, setLoadingVersions] = useState<boolean>(false);
     const [versionId, setVersionId] = useState<string>('');
     const [installing, setInstalling] = useState<boolean>(false);
+    const [installed, setInstalled] = useState<InstalledMod[]>([]);
+    const [loadingInstalled, setLoadingInstalled] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+
+    const loadInstalled = () => {
+        if (!canReadFiles) return;
+
+        setLoadingInstalled(true);
+
+        http.get(`${base}/mods/installed`)
+            .then(({ data }) => setInstalled(data.data))
+            .catch((e) => setError(httpErrorToHuman(e)))
+            .then(() => setLoadingInstalled(false));
+    };
 
     useEffect(() => {
         http.get(`${base}/mods/providers`)
@@ -71,6 +97,10 @@ const ModsSection = () => {
             })
             .catch((e) => setError(httpErrorToHuman(e)));
     }, [base]);
+
+    useEffect(() => {
+        loadInstalled();
+    }, [base, canReadFiles]);
 
     useEffect(() => {
         const timer = setTimeout(() => setDebounced(query), 400);
@@ -163,6 +193,7 @@ const ModsSection = () => {
             .then(({ data }) => {
                 const filename = data?.data?.filename;
                 setNotice(filename ? `${filename} was installed into the mods folder.` : 'Mod installed.');
+                loadInstalled();
             })
             .catch((e) => setError(httpErrorToHuman(e)))
             .then(() => setInstalling(false));
@@ -189,6 +220,57 @@ const ModsSection = () => {
                     You can browse mods, but installing one needs the <code>file.create</code> permission.
                 </div>
             )}
+
+            <div className={'mb-4 rounded bg-neutral-700 p-4'}>
+                <div className={'mb-3 flex flex-wrap items-center justify-between gap-3'}>
+                    <h2 className={'text-base font-medium text-neutral-100'}>Installed mods</h2>
+                    <button
+                        type={'button'}
+                        onClick={loadInstalled}
+                        disabled={!canReadFiles || loadingInstalled}
+                        className={'rounded bg-neutral-600 px-3 py-2 text-sm text-neutral-200 disabled:opacity-50'}
+                    >
+                        {loadingInstalled ? 'Scanning...' : 'Refresh'}
+                    </button>
+                </div>
+
+                {!canReadFiles ? (
+                    <p className={'text-sm text-neutral-400'}>
+                        Listing installed mods needs the <code>file.read</code> permission.
+                    </p>
+                ) : loadingInstalled && installed.length === 0 ? (
+                    <p className={'text-sm text-neutral-400'}>Scanning the mods folder...</p>
+                ) : installed.length === 0 ? (
+                    <p className={'text-sm text-neutral-400'}>No jar files were found in the mods folder.</p>
+                ) : (
+                    <div className={'grid gap-2 md:grid-cols-2'}>
+                        {installed.map((mod) => (
+                            <div key={mod.path} className={'flex items-center gap-3 rounded bg-neutral-800 p-3'}>
+                                {mod.icon_url ? (
+                                    <img
+                                        src={mod.icon_url}
+                                        alt={''}
+                                        className={'h-10 w-10 flex-shrink-0 rounded object-cover'}
+                                    />
+                                ) : (
+                                    <div className={'h-10 w-10 flex-shrink-0 rounded bg-neutral-600'} />
+                                )}
+
+                                <div className={'min-w-0 flex-1'}>
+                                    <p className={'truncate text-sm font-medium text-neutral-100'}>
+                                        {mod.project_name}
+                                    </p>
+                                    <p className={'truncate text-xs text-neutral-400'}>
+                                        {mod.recognized
+                                            ? `${mod.provider} - ${mod.version_name}`
+                                            : `${mod.version_name} - not recognized`}
+                                    </p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
 
             <div className={'mb-4 flex flex-wrap items-center gap-3'}>
                 <select
