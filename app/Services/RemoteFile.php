@@ -2,6 +2,8 @@
 
 namespace Pterodactyl\BlueprintFramework\Extensions\modpacks\Services;
 
+use Throwable;
+use GuzzleHttp\TransferStats;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 
@@ -13,88 +15,82 @@ use Illuminate\Support\Facades\Http;
  *
  *     downloader: got bad response status from endpoint: 302 Found
  *
- * and the pull fails. That rules out most CDN links as-is — CurseForge hands
- * out edge.forgecdn.net URLs that redirect, and Purpur's /download endpoint
- * does the same. Following the chain here costs one tiny request and keeps the
- * payload itself off the panel: what is handed to Wings is still just a URL.
+ * and the pull fails. That rules out most CDN links as published — CurseForge
+ * hands out edge.forgecdn.net URLs that redirect, and Purpur's /download does
+ * the same.
  *
- * The hops are walked with a one-byte ranged GET rather than HEAD, because
- * several of these CDNs answer HEAD with 403 while serving GET happily.
+ * The final URL is read from Guzzle's transfer stats rather than by walking 302
+ * responses by hand. An earlier version did the latter and handed Wings the
+ * original URL unchanged on a live panel, without saying why — the only silent
+ * path through it was a request that threw, which it swallowed. Reading where
+ * the transfer actually ended up has no such branch, and every outcome here is
+ * logged, so a repeat is diagnosable from the panel log rather than by
+ * inference.
+ *
+ * The body is never downloaded. HEAD is tried first, and the streamed GET
+ * fallback returns as soon as the headers are in, so the payload still goes
+ * only to Wings.
  */
 class RemoteFile
 {
-    private const MAX_HOPS = 5;
-
     public static function resolve(string $url): string
     {
-        $current = $url;
+        $effective = self::effectiveUrl($url, 'head');
 
-        for ($hop = 0; $hop < self::MAX_HOPS; $hop++) {
-            try {
-                $response = Http::withOptions(['allow_redirects' => false])
-                    ->withHeaders([
-                        'Range' => 'bytes=0-0',
-                        'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
-                    ])
-                    ->timeout(15)
-                    ->get($current);
-            } catch (\Throwable $exception) {
-                // A resolver failure is not worth sinking the install: hand Wings
-                // the URL we have and let its own error be the one reported.
-                Log::notice('modpacks: could not follow a download redirect', [
-                    'url' => $current,
-                    'message' => $exception->getMessage(),
-                ]);
-
-                return $current;
-            }
-
-            $status = $response->status();
-
-            if ($status < 300 || $status >= 400) {
-                return $current;
-            }
-
-            $location = (string) $response->header('Location');
-
-            if ($location === '') {
-                return $current;
-            }
-
-            $current = self::absolute($current, $location);
+        // Several CDNs answer HEAD with 403 or 405 while serving GET happily.
+        if ($effective === null) {
+            $effective = self::effectiveUrl($url, 'get');
         }
 
-        Log::notice('modpacks: gave up following redirects', ['url' => $url, 'hops' => self::MAX_HOPS]);
+        if ($effective === null || $effective === '') {
+            Log::warning('modpacks: could not resolve a download URL, handing Wings the original', [
+                'url' => $url,
+            ]);
 
-        return $current;
+            return $url;
+        }
+
+        if ($effective !== $url) {
+            Log::info('modpacks: followed a download redirect', ['from' => $url, 'to' => $effective]);
+        }
+
+        return $effective;
     }
 
     /**
-     * A Location header is allowed to be relative, and some CDNs use that for
-     * the final hop.
+     * The URL the transfer actually ended at, or null when the attempt failed.
      */
-    public static function absolute(string $base, string $location): string
+    private static function effectiveUrl(string $url, string $method): ?string
     {
-        if (preg_match('#^https?://#i', $location)) {
-            return $location;
+        $effective = null;
+
+        try {
+            $request = Http::withOptions([
+                // Returns once the headers are in, so a 400MB file is never
+                // pulled through the panel.
+                'stream' => true,
+                'on_stats' => function (TransferStats $stats) use (&$effective) {
+                    $effective = (string) $stats->getEffectiveUri();
+                },
+            ])->withHeaders([
+                'User-Agent' => 'pterodactyl-modpacks/0.1.0 (your-contact@example.com)',
+            ])->timeout(20);
+
+            $response = $method === 'head' ? $request->head($url) : $request->get($url);
+
+            if ($response->status() >= 400) {
+                return null;
+            }
+        } catch (Throwable $exception) {
+            Log::notice('modpacks: redirect resolution attempt failed', [
+                'url' => $url,
+                'method' => $method,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
         }
 
-        $parts = parse_url($base);
-
-        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
-            return $location;
-        }
-
-        $root = $parts['scheme'] . '://' . $parts['host']
-            . (isset($parts['port']) ? ':' . $parts['port'] : '');
-
-        if (str_starts_with($location, '/')) {
-            return $root . $location;
-        }
-
-        $path = $parts['path'] ?? '/';
-        $directory = substr($path, 0, strrpos($path, '/') + 1) ?: '/';
-
-        return $root . $directory . $location;
+        return $effective;
     }
 }
