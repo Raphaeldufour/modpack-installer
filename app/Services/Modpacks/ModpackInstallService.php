@@ -41,6 +41,7 @@ class ModpackInstallService
 
     public function __construct(
         private ProviderRegistry $registry,
+        private ModpackSettings $settings,
         private DaemonPowerRepository $powerRepository,
         private StartupModificationService $startupModificationService,
         private ReinstallServerService $reinstallServerService,
@@ -58,12 +59,13 @@ class ModpackInstallService
         bool $wipe = true,
     ): Server {
         $provider = $this->registry->get($providerKey);
-        $eggId = (int) config('modpacks.installer_egg_id');
+        $eggId = $this->settings->installerEggId();
 
         if ($eggId < 1) {
             throw new DisplayException(
                 'The modpack installer egg has not been configured on this panel. An administrator '
-                . 'needs to import egg/modpack-installer.json and set its id in config/modpacks.php.'
+                . 'needs to import egg/modpack-installer.json and select it under '
+                . 'Admin -> Extensions -> Modpacks.'
             );
         }
 
@@ -78,7 +80,7 @@ class ModpackInstallService
         // runs in a container that has no access to the panel's config. The egg
         // marks the variable user_viewable: false so it stays out of the UI.
         if ($provider->key() === 'curseforge') {
-            $key = (string) config('modpacks.curseforge_api_key');
+            $key = $this->settings->curseForgeApiKey();
 
             if ($key === '') {
                 throw new DisplayException(

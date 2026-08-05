@@ -11,6 +11,10 @@ class CurseForgeProvider implements ProviderInterface
     private const GAME_MINECRAFT = 432;
     private const CLASS_MODPACKS = 4471;
 
+    public function __construct(private ModpackSettings $settings)
+    {
+    }
+
     public function key(): string
     {
         return 'curseforge';
@@ -23,7 +27,7 @@ class CurseForgeProvider implements ProviderInterface
 
     private function client()
     {
-        $key = config('modpacks.curseforge_api_key');
+        $key = $this->settings->curseForgeApiKey();
 
         if (empty($key)) {
             throw new \RuntimeException(

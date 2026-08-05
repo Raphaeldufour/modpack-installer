@@ -57,6 +57,9 @@ here must also be bound in `conf.yml` or the build silently ignores it.
   class implementing `ProviderInterface` plus a line in `ProviderRegistry`.
 - All provider HTTP goes through the panel. API keys never reach the browser.
 - Provider responses are cached 300s. Keep it.
+- Configuration is read through `ModpackSettings`, never with `config()` at the
+  call site. It resolves the admin page's settings first and falls back to
+  `config/modpacks.php` for panels configured before that page existed.
 - Edit `egg/install.sh` and run `python3 egg/build_egg.py` to regenerate
   `egg/modpack-installer.json`. Never hand-edit the JSON.
 
@@ -85,14 +88,13 @@ by blanking bindings.
   moved between releases before.
 - **Client route prefix.** The React component hardcodes
   `/api/client/servers/{uuid}/modpacks`. Confirm with `route:list`.
-- **`admin/view.blade.php` and `admin/AdminController.php`** are bound in
-  `conf.yml` but do not exist yet. The build will fail until they are created
-  or the bindings removed.
+- **The admin controller's class name.** `modpacksExtensionController` and the
+  two-classes-in-one-file layout come from Blueprint's admin template, which
+  substitutes `info.identifier` into both. If the page 500s on load, that
+  derivation is the first thing to check against your Blueprint version.
 
 ## Known gaps
 
-- [ ] Admin page for the CurseForge key and installer egg ID (currently
-      `config/modpacks.php`, which hosts must create by hand)
 - [ ] FTB, Technic, ATLauncher providers
 - [ ] Surface CurseForge `allowModDistribution: false` blocks in the UI —
       currently only logged as `BLOCKED:` in the install log, which silently

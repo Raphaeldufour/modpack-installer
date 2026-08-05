@@ -40,6 +40,7 @@ app/Http/Controllers/Extensions/modpacks/ModpackController.php
 routes/client.php                     # client API endpoints — requests.routers.client
 components/Components.yml             # dashboard.components points at the DIRECTORY
 components/sections/ModpacksSection.tsx   # the tab itself
+admin/                                # admin.view + admin.controller — CF key, egg picker
 egg/install.sh                        # source of truth for the egg script
 egg/egg.template.json                 # egg metadata; script slot is a placeholder
 egg/build_egg.py                      # install.sh + template -> modpack-installer.json
@@ -58,18 +59,11 @@ the missing `conf.yml` bindings that currently break the build. The short versio
    into `/var/www/pterodactyl/.blueprint/dev/`.
 4. Create the files bound in `conf.yml` that don't exist yet, or blank those
    bindings — `-build` aborts otherwise. See `INSTALL.md` §B.3.
-5. Import `egg/modpack-installer.json` in the admin area, note its egg ID.
-6. Create `config/modpacks.php`:
-   ```php
-   <?php
-   return [
-       'curseforge_api_key' => env('CURSEFORGE_API_KEY'),
-       'installer_egg_id' => (int) env('MODPACK_INSTALLER_EGG_ID'),
-   ];
-   ```
-   Long term, move both into a Blueprint admin config so hosts can set them
-   in the UI instead of editing files.
-7. `blueprint -build`, then hard-refresh the panel.
+5. Import `egg/modpack-installer.json` in the admin area.
+6. `blueprint -build`, then hard-refresh the panel.
+7. Set the CurseForge key and pick the installer egg at
+   **Admin → Extensions → Modpacks**. Modrinth needs neither, so you can skip
+   this entirely to try it out.
 
 ## Things that will bite you
 

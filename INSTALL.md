@@ -183,9 +183,9 @@ FATAL: Extension configuration points towards one or more files that do not exis
 | `requests.app` | `app/` | ✅ |
 | `requests.routers.client` | `routes/client.php` | ✅ |
 | `dashboard.components` | `components/` | ✅ |
+| `admin.view` | `admin/view.blade.php` | ✅ |
+| `admin.controller` | `admin/AdminController.php` | ✅ |
 | `info.icon` | `assets/icon.png` | ❌ |
-| `admin.view` | `admin/view.blade.php` | ❌ |
-| `admin.controller` | `admin/AdminController.php` | ❌ |
 | `data.directory` | `data/` | ❌ |
 | `data.public` | `public/` | ❌ |
 | `database.migrations` | `database/migrations/` | ❌ |
@@ -198,45 +198,10 @@ Deux chemins possibles.
 DEV=/var/www/pterodactyl/.blueprint/dev
 cd "$DEV"
 
-mkdir -p assets admin data public database/migrations
+mkdir -p assets data public database/migrations
 
 # Icône : n'importe quel PNG fait l'affaire pour un build de test
 curl -fsSL -o assets/icon.png https://dummyimage.com/64x64/2d2d2d/ffffff.png
-
-# Page admin minimale
-cat > admin/view.blade.php <<'BLADE'
-<div class="row">
-  <div class="col-xs-12">
-    <div class="box">
-      <div class="box-header with-border"><h3 class="box-title">Modpacks</h3></div>
-      <div class="box-body">
-        <p>Configuration à venir : clé API CurseForge et ID de l'egg installeur.</p>
-      </div>
-    </div>
-  </div>
-</div>
-BLADE
-
-cat > admin/AdminController.php <<'PHP'
-<?php
-
-namespace Pterodactyl\Http\Controllers\Admin\Extensions\modpacks;
-
-use Pterodactyl\Http\Controllers\Controller;
-use Illuminate\Contracts\View\Factory as ViewFactory;
-
-class ModpacksExtensionController extends Controller
-{
-    public function __construct(private ViewFactory $view)
-    {
-    }
-
-    public function index()
-    {
-        return $this->view->make('admin.extensions.modpacks.index');
-    }
-}
-PHP
 
 # Scripts d'extension (ils tournent à l'installation de l'extension,
 # ils n'ont RIEN à voir avec l'installation d'un modpack)
@@ -249,9 +214,10 @@ touch public/.gitkeep database/migrations/.gitkeep
 chown -R www-data:www-data "$DEV"
 ```
 
-> Le nom de classe et le namespace du contrôleur admin ci-dessus dépendent de la
-> version de Blueprint. Si le build s'en plaint, compare avec le gabarit produit par
-> `blueprint -init`, qui fait autorité sur ta version.
+> `admin/` n'est plus à créer : la page admin existe. Son nom de classe
+> (`modpacksExtensionController`) est dérivé de `info.identifier` par Blueprint, comme
+> dans son gabarit officiel. Si la page renvoie une 500 au chargement, c'est la
+> première chose à comparer avec le gabarit de *ta* version.
 
 #### Option 2 — retirer les bindings
 
@@ -353,13 +319,38 @@ d'où un log d'installation en direct dans la console du serveur.
 
 1. Panel → **Admin** → **Nests** → choisir ou créer un nest (ex. `Minecraft`).
 2. **Import Egg** → envoyer [`egg/modpack-installer.json`](egg/modpack-installer.json).
-3. Ouvrir l'egg importé et **noter son ID** (il est dans l'URL :
-   `/admin/nests/egg/<ID>`). Il servira à l'étape suivante.
+3. C'est tout : la page admin de l'étape suivante liste les eggs et te laisse
+   sélectionner celui-ci. (Son ID reste visible dans l'URL `/admin/nests/egg/<ID>` si
+   tu configures par fichier plutôt que par l'interface.)
 
-### D.2 Créer `config/modpacks.php`
+### D.2 Configurer l'extension
 
-Le panel a besoin de la clé CurseForge et de l'ID de l'egg. Tant que la page admin
-n'existe pas, ça se fait à la main :
+Rends-toi sur **Admin → Extensions → Modpacks**. Deux réglages :
+
+- **CurseForge API key** — nécessaire uniquement pour les packs CurseForge. Une clé
+  s'obtient sur <https://console.curseforge.com/>.
+- **Installer egg** — la liste déroulante des eggs du panel, groupée par nest.
+  Sélectionne celui importé en [D.1](#d1-importer-legg). Plus besoin de relever son ID
+  à la main.
+
+Le bouton **Apply Changes** n'apparaît qu'une fois un champ modifié.
+
+> **Modrinth ne demande aucune clé.** Tu peux laisser le champ CurseForge vide et
+> valider toute la chaîne avec Modrinth — c'est le chemin le plus rapide.
+>
+> Choisir le mauvais egg est destructeur : les serveurs sont basculés dessus puis
+> réinstallés. Vérifie que tu sélectionnes bien « Modpack Installer ».
+>
+> La clé est un **secret serveur**. Elle ne quitte jamais le panel vers un navigateur
+> (c'est toute la raison du proxy sur les providers), mais elle est écrite dans
+> l'environnement du serveur installé, car `install.sh` tourne dans un conteneur qui
+> n'a pas accès aux réglages du panel. La variable d'egg est en `user_viewable: false`.
+
+<details>
+<summary>Alternative : <code>config/modpacks.php</code> (panels installés avant la page admin)</summary>
+
+Les réglages de la page admin ont la priorité. Si un champ est laissé vide, l'extension
+retombe sur ce fichier, ce qui évite de casser un panel déjà configuré ainsi :
 
 ```bash
 cat > /var/www/pterodactyl/config/modpacks.php <<'PHP'
@@ -387,12 +378,10 @@ php artisan config:clear
 php artisan config:cache
 ```
 
-> La clé CurseForge est un **secret serveur**. C'est toute la raison pour laquelle les
-> appels aux providers transitent par le panel : elle ne doit jamais atteindre le
-> navigateur. Ne commite pas `config/modpacks.php` (il est déjà dans `.gitignore`).
->
-> Une clé s'obtient sur <https://console.curseforge.com/>. **Modrinth n'en demande
-> aucune** — commence par là pour valider la chaîne de bout en bout.
+Ne commite pas `config/modpacks.php` (il est déjà dans `.gitignore`). La page admin
+signale quand une valeur provient encore de ce fichier.
+
+</details>
 
 ### D.3 Modifier le script d'installation de l'egg
 
@@ -486,8 +475,6 @@ Des erreurs de types dans un éditeur ouvert sur le dépôt seul sont normales.
 
 Rien de bloquant. Restent des points de confort :
 
-- La page admin réelle : la clé CurseForge et l'ID de l'egg se posent encore à la main
-  dans `config/modpacks.php` (cf. [D.2](#d2-créer-configmodpacksphp)).
 - L'onglet ne se masque pas sur les eggs non-Minecraft. La logique de filtrage vit dans
   `resources/scripts/blueprint/extends/routers/ServerRouter.tsx` du dépôt du framework.
 - Pas de sondage de `/state` pendant l'installation : la progression s'observe dans la
@@ -507,7 +494,9 @@ Rien de bloquant. Restent des points de confort :
 | L'onglet n'apparaît pas | 1) Cache navigateur — Ctrl+Shift+R (le panel sert du JS compilé). 2) `dashboard.components` doit valoir `components` (le dossier), pas `components/Components.yml`. 3) Le schéma a déjà changé entre versions de Blueprint : diffe avec le gabarit `3` de `blueprint -init`. |
 | L'onglet apparaît sur un serveur non-Minecraft | Manque connu, pas un bug de placement : le filtrage par egg n'est pas implémenté. |
 | 404 sur les appels API de l'onglet | Le préfixe de route réel diffère de celui codé en dur. Vérifie avec `php artisan route:list \| grep modpacks`. |
-| `CurseForge is not configured` | `config/modpacks.php` absent, ou config non rechargée : `php artisan config:clear`. |
+| `CurseForge is not configured` | Aucune clé enregistrée : **Admin → Extensions → Modpacks**. Si tu configures par fichier, `config/modpacks.php` est absent ou la config n'a pas été rechargée (`php artisan config:clear`). |
+| `The modpack installer egg has not been configured` | Aucun egg sélectionné sur la page admin, ou l'egg choisi a été supprimé depuis. |
+| La page admin renvoie une 500 | Le nom de classe `modpacksExtensionController` est dérivé de `info.identifier` par Blueprint. Compare avec le gabarit `2` (« Admin configuration ») de `blueprint -init` pour ta version. |
 | Le pack s'installe mais le serveur ne démarre pas | Regarde le log d'installation dans la console du serveur. Les lignes `BLOCKED:` signalent des mods dont l'auteur interdit la redistribution — il n'existe aucun contournement légal, il faut les ajouter à la main. Les lignes `WARN:` signalent un téléchargement échoué. |
 | Mods client-only qui crashent le serveur | Un `.mrpack` Modrinth est un manifeste, pas un pack serveur. Le filtre `env.server != "unsupported"` doit être appliqué, et `server-overrides/` copié **après** `overrides/`. |
 | HTTP 429 des providers | Modrinth limite le débit et exige un User-Agent descriptif : mets une vraie adresse de contact dans `ModrinthProvider::client()`. Le cache de 300 s est un plancher, pas un réglage à baisser. |
