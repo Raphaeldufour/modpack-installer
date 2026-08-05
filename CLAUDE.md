@@ -80,6 +80,12 @@ bash -n egg/install.sh    # syntax-check before regenerating the egg
 exist` means a `conf.yml` binding is wrong. It does not say which one — bisect
 by blanking bindings.
 
+The trap: an **omitted** key is not the same as an empty one. Blueprint resolves
+every key it knows about, and a missing one comes back as the string `null`,
+which then fails a file test for a path nobody wrote. Declare the full key set
+and leave unused entries as `''`, the way the official templates do. A `conf.yml`
+whose every declared path exists can still fail this way.
+
 ## Unverified — check before trusting
 
 - **`Components.yml` schema.** Resolved: diffed against the official

@@ -2,27 +2,47 @@ info:
   name: 'Modpacks'
   identifier: 'modpacks'          # lowercase alphanumeric only — used everywhere as a namespace
   description: 'Browse and install Minecraft modpacks without leaving the panel.'
+  flags: ''
   version: '0.1.0'
   target: '1.11.11'               # the Pterodactyl version you built + tested against
   author: 'you'
   icon: 'assets/icon.png'
   website: ''
 
+# Every key below is declared even when unused, with an empty value.
+#
+# This is not tidiness. Blueprint reads each one out of this file and resolves
+# it as a path; a key that is absent entirely comes back as the string "null"
+# and gets tested as a filename, which fails with
+#
+#   FATAL: Extension configuration points towards one or more files that do not exist
+#
+# naming nothing. Omitting a key is therefore not the same as leaving it empty,
+# and the official templates declare the full set for exactly this reason.
+
 admin:
-  view: 'admin/view.blade.php'    # where the host sets the CurseForge API key + installer egg id
+  view: 'admin/view.blade.php'    # where the host sets the CurseForge API key + installer egg
   controller: 'admin/AdminController.php'
+  css: ''
+  wrapper: ''
+
+dashboard:
+  css: ''
+  wrapper: ''
+  components: 'components'        # a DIRECTORY containing Components.yml, not the file itself
 
 data:
   directory: 'data'               # install.sh / update.sh / remove.sh live in here
   public: 'public'
-
-dashboard:
-  components: 'components'       # a DIRECTORY containing Components.yml, not the file itself
+  console: ''
 
 requests:
+  views: ''
   app: 'app'                      # copied into the panel's app/ tree
   routers:
+    application: ''
     client: 'routes/client.php'   # endpoints under the client API, session-authenticated
+    web: ''
 
 database:
   migrations: 'database/migrations'

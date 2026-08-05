@@ -51,6 +51,12 @@ not exist` and does not tell you which one. Bisect by blanking bindings.
 **Unbound files are ignored.** Dropping a `.php` into `app/` does nothing
 unless `requests.app` is set. There is no auto-discovery.
 
+**Declare every conf.yml key, even unused ones.** Leaving a key out is not the
+same as setting it to `''`. Blueprint resolves each key it knows about, and an
+absent one reads back as the string `null`, which is then tested as a filename
+and fails the build — reporting a missing file you never configured. The
+official templates declare the whole set for this reason; copy that shape.
+
 **`dashboard.components` names a directory, not a file.** It points at the
 folder that *contains* `Components.yml`, and `Component:` values inside that
 file are resolved relative to it, without a file extension — so

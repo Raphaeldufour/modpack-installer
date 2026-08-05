@@ -205,11 +205,23 @@ for p in assets/icon.png admin/view.blade.php admin/AdminController.php \
 done
 ```
 
-> **Si le `FATAL` tombe malgré tout**, bissecte : vide toutes les valeurs de `conf.yml`
-> (`icon: ''`, `view: ''`, `components: ''`…), build, puis remets-les une par une
-> jusqu'à ce que ça repète. Le binding fautif est celui que tu viens de remettre.
-> Une valeur vide est ignorée par le build — c'est ce que fait le gabarit officiel
-> pour les sections qu'il n'utilise pas.
+> **Le piège qui rend ce `FATAL` déroutant** : une clé **absente** de `conf.yml` n'est
+> pas équivalente à une clé vide. Blueprint résout chaque clé qu'il connaît ; une clé
+> omise revient comme la chaîne `null`, qui est ensuite testée comme un nom de fichier
+> et fait échouer le build — en signalant un fichier manquant que tu n'as jamais
+> configuré. C'est pourquoi le `conf.yml` de ce dépôt déclare **toutes** les clés, les
+> inutilisées à `''`. Si tu en retires une, remets-la à `''` plutôt que de la supprimer.
+>
+> **Si le `FATAL` tombe malgré tout**, bissecte : vide toutes les *valeurs*, build, puis
+> remets-les une par une jusqu'à ce que ça repète. Le binding fautif est celui que tu
+> viens de remettre.
+>
+> Pour la vérité terrain sur *ta* version de Blueprint, va lire la validation elle-même :
+>
+> ```bash
+> F=$(grep -rl "points towards one or more files" /var/www/pterodactyl --include='*.sh' | head -1)
+> grep -n -B 40 "points towards one or more files" "$F"
+> ```
 
 > Les scripts de `data/` tournent à l'installation de **l'extension** (ils affichent
 > les étapes de configuration) et n'ont rien à voir avec `egg/install.sh`, qui installe
