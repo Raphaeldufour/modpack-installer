@@ -5,6 +5,33 @@
 
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# Report and check the inputs before doing anything else.
+#
+# Every remote call below is built from these three values, so when one is
+# wrong or blank the first failure is an opaque curl error against a URL nobody
+# can see. Printing them costs one line and turns "curl: (22) 404" into an
+# answerable question. They are set by the Modpacks tab; a server reinstalled
+# from the panel without going through the tab keeps whatever it had, which for
+# a fresh egg is nothing at all.
+# ---------------------------------------------------------------------------
+echo "Modpack install requested:"
+echo "  provider = ${MODPACK_PROVIDER:-<empty>}"
+echo "  pack     = ${MODPACK_ID:-<empty>}"
+echo "  version  = ${MODPACK_VERSION:-<empty>}"
+echo "  wipe     = ${WIPE_EXISTING:-1}"
+
+for required in MODPACK_PROVIDER MODPACK_ID MODPACK_VERSION; do
+    if [ -z "${!required:-}" ]; then
+        echo "" >&2
+        echo "FATAL: ${required} is empty." >&2
+        echo "Install a pack from the server's Modpacks tab, which sets these." >&2
+        echo "Reinstalling from the panel replays whatever the server already had," >&2
+        echo "so it cannot work until the tab has been used at least once." >&2
+        exit 1
+    fi
+done
+
 apt-get update -qq
 apt-get install -y -qq curl jq unzip ca-certificates >/dev/null
 
@@ -70,9 +97,25 @@ cleanup() {
     if [ "$rc" -ne 0 ]; then
         echo "" >&2
         echo "Install failed (exit ${rc})." >&2
-        echo "If the error above was curl 23, the server ran out of disk: the archive and" >&2
-        echo "its extracted contents must both fit inside this server's disk limit." >&2
-        df -h /mnt/server 2>/dev/null >&2 || true
+
+        # curl's exit codes are the ones worth translating: they are what the
+        # user actually sees, and each points somewhere quite different.
+        case "$rc" in
+            22)
+                echo "A request was rejected. 404 means that pack/version pair does not exist" >&2
+                echo "on the provider; 403 usually means the CurseForge API key is missing or" >&2
+                echo "invalid. The ids used are printed at the top of this log." >&2
+                ;;
+            23)
+                echo "Ran out of disk while writing. The archive and its extracted contents" >&2
+                echo "must both fit inside this server's disk limit." >&2
+                df -h /mnt/server 2>/dev/null >&2 || true
+                ;;
+            6|7|28)
+                echo "The provider could not be reached, or timed out. Retry; if it persists," >&2
+                echo "check outbound network access from the install container." >&2
+                ;;
+        esac
     fi
 }
 trap cleanup EXIT
@@ -158,7 +201,20 @@ install_curseforge() {
     local api="https://api.curseforge.com/v1"
     local hdr="x-api-key: ${CURSEFORGE_API_KEY}"
 
-    local file; file=$(curl -fsSL -H "$hdr" "${api}/mods/${MODPACK_ID}/files/${MODPACK_VERSION}")
+    if [ -z "${CURSEFORGE_API_KEY:-}" ]; then
+        echo "FATAL: no CurseForge API key. Set one under Admin -> Extensions -> Modpacks." >&2
+        exit 1
+    fi
+
+    local file
+    if ! file=$(curl -fsSL -H "$hdr" "${api}/mods/${MODPACK_ID}/files/${MODPACK_VERSION}"); then
+        echo "" >&2
+        echo "FATAL: CurseForge has no file ${MODPACK_VERSION} for project ${MODPACK_ID}." >&2
+        echo "The two must belong together — a file id from a different project 404s here." >&2
+        echo "Pick the version from the Modpacks tab rather than entering ids by hand." >&2
+        exit 1
+    fi
+
     local serverPack; serverPack=$(echo "$file" | jq -r '.data.serverPackFileId // empty')
 
     if [ -n "$serverPack" ]; then
