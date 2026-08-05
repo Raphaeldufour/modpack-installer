@@ -6,7 +6,6 @@ use Throwable;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Pterodactyl\Models\Server;
-use Pterodactyl\Models\Permission;
 use Illuminate\Support\Facades\Log;
 use Pterodactyl\Http\Controllers\Controller;
 use Pterodactyl\Exceptions\DisplayException;
@@ -104,18 +103,27 @@ class ModController extends Controller
 
     public function installed(Request $request, Server $server): JsonResponse
     {
-        if (!$request->user()->can(Permission::ACTION_FILE_READ, $server)) {
+        if (!$request->user()->can('file.read', $server)) {
             throw new AccessDeniedHttpException(
                 'Listing installed mods requires the file.read permission.'
             );
         }
 
-        return new JsonResponse(['data' => $this->installedModsService->list($server)]);
+        try {
+            return new JsonResponse(['data' => $this->installedModsService->list($server)]);
+        } catch (Throwable $exception) {
+            Log::error('modpacks: installed mods scan failed', [
+                'server' => $server->uuid,
+                'exception' => $exception,
+            ]);
+
+            throw new DisplayException('Installed mods could not be scanned: ' . $exception->getMessage());
+        }
     }
 
     private function authorizeInstall(Request $request, Server $server): void
     {
-        foreach ([Permission::ACTION_FILE_CREATE] as $permission) {
+        foreach (['file.create'] as $permission) {
             if (!$request->user()->can($permission, $server)) {
                 throw new AccessDeniedHttpException(
                     'Installing a mod requires the file.create permission.'
