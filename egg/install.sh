@@ -42,7 +42,6 @@ ensure_java() {
 }
 
 cd /mnt/server
-WORK=$(mktemp -d)
 
 if [ "${WIPE_EXISTING:-1}" = "1" ]; then
     echo "Clearing previous installation (worlds preserved)..."
@@ -51,6 +50,32 @@ if [ "${WIPE_EXISTING:-1}" = "1" ]; then
         ! -name 'server.properties' ! -name 'ops.json' ! -name 'whitelist.json' \
         -exec rm -rf {} +
 fi
+
+# Scratch space goes on the server volume, never /tmp.
+#
+# Wings mounts a tmpfs over /tmp in the install container, 100M by default
+# (docker.tmpfs_size in its config). Modpack archives are routinely several
+# hundred megabytes, so `mktemp -d` there fills up mid-download and curl aborts
+# with "(23) Failure writing output to destination" — which reads like a
+# permissions fault and is really just a full disk. /mnt/server is the server's
+# own volume and is sized for the pack by definition.
+#
+# Created after the wipe so the wipe cannot delete it, and removed on any exit
+# so a failed install does not leave the directory sitting in the user's files.
+WORK=$(mktemp -d -p /mnt/server .modpack-install-XXXXXX)
+
+cleanup() {
+    local rc=$?
+    rm -rf "$WORK"
+    if [ "$rc" -ne 0 ]; then
+        echo "" >&2
+        echo "Install failed (exit ${rc})." >&2
+        echo "If the error above was curl 23, the server ran out of disk: the archive and" >&2
+        echo "its extracted contents must both fit inside this server's disk limit." >&2
+        df -h /mnt/server 2>/dev/null >&2 || true
+    fi
+}
+trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
 # Loader installation. Shared by every provider once we know mc + loader ver.
@@ -97,6 +122,7 @@ install_modrinth() {
     echo "Downloading modpack..."
     curl -fsSL -o "${WORK}/pack.mrpack" "$url"
     unzip -q "${WORK}/pack.mrpack" -d "${WORK}/pack"
+    rm -f "${WORK}/pack.mrpack"
 
     local index="${WORK}/pack/modrinth.index.json"
     local mc; mc=$(jq -r '.dependencies.minecraft' "$index")
@@ -141,6 +167,7 @@ install_curseforge() {
             "${api}/mods/${MODPACK_ID}/files/${serverPack}/download-url" | jq -r '.data')
         curl -fsSL -o "${WORK}/server.zip" "$url"
         unzip -q -o "${WORK}/server.zip" -d .
+        rm -f "${WORK}/server.zip"
         return
     fi
 
@@ -149,6 +176,7 @@ install_curseforge() {
         "${api}/mods/${MODPACK_ID}/files/${MODPACK_VERSION}/download-url" | jq -r '.data')
     curl -fsSL -o "${WORK}/pack.zip" "$url"
     unzip -q "${WORK}/pack.zip" -d "${WORK}/pack"
+    rm -f "${WORK}/pack.zip"
 
     local mf="${WORK}/pack/manifest.json"
     local mc; mc=$(jq -r '.minecraft.version' "$mf")
@@ -209,6 +237,5 @@ else
 fi
 
 chmod +x start.sh run.sh 2>/dev/null || true
-rm -rf "$WORK"
 
 echo "Modpack installed. Startup command written to start.sh."
