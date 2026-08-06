@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import http, { httpErrorToHuman } from '@/api/http';
 import { ServerContext } from '@/state/server';
 import PageContentBlock from '@/components/elements/PageContentBlock';
@@ -79,21 +79,65 @@ const ModsSection = () => {
     const [installing, setInstalling] = useState<boolean>(false);
     const [installed, setInstalled] = useState<InstalledMod[]>([]);
     const [loadingInstalled, setLoadingInstalled] = useState<boolean>(false);
+    // Distinct from loadingInstalled: identifying every mod in a large pack's
+    // mods/ folder can take longer than one request's time budget (reading and
+    // hashing each jar through Wings, mod by mod — there is no bulk endpoint
+    // for file contents). The server reports whatever it managed within that
+    // budget plus a `scanning` flag rather than blocking until everything is
+    // identified, so this tracks "still catching up in the background" without
+    // holding the whole list behind a spinner.
+    const [scanningMods, setScanningMods] = useState<boolean>(false);
     const [confirmDelete, setConfirmDelete] = useState<InstalledMod | null>(null);
     const [deleting, setDeleting] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
 
+    // Guards the poll loop below against setState after unmount, and lets a
+    // fresh loadInstalled() call (the Refresh button, a new install) cancel an
+    // in-flight poll chain rather than race it.
+    const scanToken = useRef<number>(0);
+
     const loadInstalled = () => {
         if (!canReadFiles) return;
 
+        const token = ++scanToken.current;
         setLoadingInstalled(true);
 
-        http.get(`${base}/mods/installed`)
-            .then(({ data }) => setInstalled(data.data))
-            .catch((e) => setError(httpErrorToHuman(e)))
-            .then(() => setLoadingInstalled(false));
+        const poll = () => {
+            http.get(`${base}/mods/installed`)
+                .then(({ data }) => {
+                    if (scanToken.current !== token) return;
+
+                    setInstalled(data.data.mods);
+                    setScanningMods(Boolean(data.data.scanning));
+                    setLoadingInstalled(false);
+
+                    // Each call already costs up to ~15s server-side when there
+                    // is a lot left to identify, so the next poll is scheduled
+                    // only after this one returns — never on a fixed interval,
+                    // which could pile up overlapping requests.
+                    if (data.data.scanning) {
+                        setTimeout(() => {
+                            if (scanToken.current === token) poll();
+                        }, 1500);
+                    }
+                })
+                .catch((e) => {
+                    if (scanToken.current !== token) return;
+                    setError(httpErrorToHuman(e));
+                    setLoadingInstalled(false);
+                    setScanningMods(false);
+                });
+        };
+
+        poll();
     };
+
+    useEffect(() => () => {
+        // Orphan the token on unmount so a poll already in flight is a no-op
+        // when it lands.
+        scanToken.current++;
+    }, []);
 
     useEffect(() => {
         http.get(`${base}/mods/providers`)
@@ -263,10 +307,10 @@ const ModsSection = () => {
                     <button
                         type={'button'}
                         onClick={loadInstalled}
-                        disabled={!canReadFiles || loadingInstalled}
+                        disabled={!canReadFiles || loadingInstalled || scanningMods}
                         className={'rounded bg-neutral-600 px-3 py-2 text-sm text-neutral-200 disabled:opacity-50'}
                     >
-                        {loadingInstalled ? 'Scanning...' : 'Refresh'}
+                        {loadingInstalled || scanningMods ? 'Scanning…' : 'Refresh'}
                     </button>
                 </div>
 
@@ -274,12 +318,20 @@ const ModsSection = () => {
                     <p className={'text-sm text-neutral-400'}>
                         Listing installed mods needs the <code>file.read</code> permission.
                     </p>
-                ) : loadingInstalled && installed.length === 0 ? (
+                ) : (loadingInstalled || scanningMods) && installed.length === 0 ? (
                     <p className={'text-sm text-neutral-400'}>Scanning the mods folder...</p>
                 ) : installed.length === 0 ? (
                     <p className={'text-sm text-neutral-400'}>No jar files were found in the mods folder.</p>
                 ) : (
-                    <div className={'grid gap-2 md:grid-cols-2'}>
+                    <>
+                        {scanningMods && (
+                            <p className={'mb-2 text-xs text-neutral-400'}>
+                                Still identifying{' '}
+                                {installed.filter((mod) => mod.reason === 'pending_scan').length} of{' '}
+                                {installed.length} mods — this list will keep filling in.
+                            </p>
+                        )}
+                        <div className={'grid gap-2 md:grid-cols-2'}>
                         {installed.map((mod) => (
                             <div key={mod.path} className={'flex items-center gap-3 rounded bg-neutral-800 p-3'}>
                                 {mod.icon_url ? (
@@ -321,7 +373,8 @@ const ModsSection = () => {
                                 </button>
                             </div>
                         ))}
-                    </div>
+                        </div>
+                    </>
                 )}
             </div>
 

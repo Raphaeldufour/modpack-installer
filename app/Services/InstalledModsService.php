@@ -17,13 +17,36 @@ class InstalledModsService
     private const LOOKUP_TIMEOUT = 10;
     private const CURSEFORGE_GAME_MINECRAFT = 432;
 
+    /**
+     * Wall-clock budget for one call to list(), covering only the part that
+     * scales with how many mods are unidentified: reading each one's full jar
+     * through Wings (a network round trip per file, there is no bulk-content
+     * endpoint) and hashing it. A single `mods/` folder for a pack the size of
+     * All the Mods 10 holds a few hundred jars, and doing that for every one of
+     * them in one request is exactly what blew past PHP's 30s execution limit
+     * on the first scan after an install — the one moment every mod is
+     * unrecognised at once.
+     *
+     * Kept short enough to stay well clear of that limit with margin for the
+     * bulk provider lookups afterwards, which run once per call, not once per
+     * mod. Whatever does not fit in the budget is reported back as still
+     * pending — see the `pending_scan` handling in list() — rather than
+     * skipped or guessed at.
+     */
+    private const SCAN_TIME_BUDGET_SECONDS = 15.0;
+
     public function __construct(
         private ModpackSettings $settings,
         private DaemonFileRepository $fileRepository,
     ) {
     }
 
-    /** @return array[] */
+    /**
+     * @return array{mods: array[], scanning: bool} `scanning` is true when the
+     *         time budget ran out before every mod could be identified — the
+     *         caller is expected to call again, which resumes rather than
+     *         restarts, since only what was actually identified is cached.
+     */
     public function list(Server $server): array
     {
         $repository = $this->fileRepository->setServer($server);
@@ -47,7 +70,9 @@ class InstalledModsService
             $pending[] = ['path' => $path, 'entry' => $entry, 'signature' => $signature];
         }
 
-        foreach ($this->identifyMany($repository, $pending) as $path => $mod) {
+        [$identified, $unreached] = $this->identifyMany($repository, $pending);
+
+        foreach ($identified as $path => $mod) {
             $modsByPath[$path] = $mod;
             $nextState[$path] = [
                 'version' => self::STATE_VERSION,
@@ -56,12 +81,22 @@ class InstalledModsService
             ];
         }
 
+        // Deliberately absent from $nextState: caching a placeholder would
+        // make the next call believe this mod is done rather than resuming it.
+        foreach ($unreached as $item) {
+            $modsByPath[$item['path']] = $this->baseMod($item['path'], $item['entry'], 'pending_scan')
+                + ['_signature' => $item['signature']];
+        }
+
         $this->writeState($repository, $nextState);
 
-        return array_values(array_map(
-            fn (array $entry) => $this->withoutInternalKeys($modsByPath['mods/' . $entry['name']]),
-            $entries,
-        ));
+        return [
+            'mods' => array_values(array_map(
+                fn (array $entry) => $this->withoutInternalKeys($modsByPath['mods/' . $entry['name']]),
+                $entries,
+            )),
+            'scanning' => $unreached !== [],
+        ];
     }
 
     private function baseMod(string $path, array $entry, string $reason): array
@@ -80,13 +115,35 @@ class InstalledModsService
         ];
     }
 
-    /** @param array<int, array{path: string, entry: array, signature: string}> $pending */
+    /**
+     * @param array<int, array{path: string, entry: array, signature: string}> $pending
+     *
+     * @return array{0: array[], 1: array<int, array{path: string, entry: array, signature: string}>}
+     *         the identified mods, keyed by path, and whichever $pending items
+     *         the time budget did not reach — untouched, not half-processed,
+     *         so they are exactly what the next call should retry
+     */
     private function identifyMany(DaemonFileRepository $repository, array $pending): array
     {
         $hashed = [];
         $mods = [];
+        $unreached = [];
+        $deadline = microtime(true) + self::SCAN_TIME_BUDGET_SECONDS;
 
-        foreach ($pending as $item) {
+        foreach ($pending as $index => $item) {
+            // Checked before any work on this item starts, so a stopped item
+            // is one the next call retries from scratch — never one read
+            // through Wings but then abandoned before hashing. Breaking
+            // rather than returning here matters: items already hashed into
+            // $hashed by earlier iterations still need the bulk provider
+            // lookup below to become real results, and returning early from
+            // inside this loop would strand them there, unidentified, even
+            // though the (slow) part of their work was already done.
+            if (microtime(true) >= $deadline) {
+                $unreached = array_slice($pending, $index);
+                break;
+            }
+
             $path = $item['path'];
             $entry = $item['entry'];
 
@@ -138,7 +195,7 @@ class InstalledModsService
             $mods[$path] = $mod + ['_signature' => $item['signature']];
         }
 
-        return $mods;
+        return [$mods, $unreached];
     }
 
     private function withoutInternalKeys(array $mod): array

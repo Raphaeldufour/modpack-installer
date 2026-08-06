@@ -23,7 +23,8 @@ Vérifié sur un panel réel (Blueprint `beta-2026-06`).
 | Installation sans egg ni réinstallation | ✅ |
 | Résolution des redirections CDN avant Wings | ✅ |
 | `start.sh` généré, heap résolu au démarrage | ✅ |
-| Onglet Mods — recherche, installation, liste, suppression | ✅ écrit, non testé sur panel |
+| Onglet Mods — recherche, installation, suppression | ✅ testé sur panel |
+| Onglet Mods — liste des mods installés | ✅ testé, corrigé (voir §1) — le correctif reste à revérifier sur panel |
 | État installé — bannière « en cours » sur Versions et Modpacks | ✅ écrit, non testé sur panel |
 
 **Architecture acquise**, à ne pas réinventer pour les onglets suivants :
@@ -36,7 +37,7 @@ commande de démarrage. Le serveur garde son egg.
 
 Construit : `ModProviderInterface`, providers Modrinth et CurseForge,
 `ModProviderRegistry`, `ModInstallService`, `InstalledModsService`,
-`ModController`, `ModsSection.tsx`. Reste à tester sur un panel.
+`ModController`, `ModsSection.tsx`.
 
 **La question ouverte de ce backlog a été tranchée.** Identifier un jar déjà
 présent demandait soit un manifeste local de ce que l'extension avait installé,
@@ -51,6 +52,20 @@ l'architecture évite partout ailleurs. C'est borné (plafond de 64 Mo par
 fichier, mods de quelques Mo) et sans alternative pour de l'identification, mais
 c'est la seule exception à la règle — ne pas s'en servir de précédent pour
 justifier de faire passer un pack par le panel.
+
+**Testé sur panel, cassé, corrigé.** Un scan sur un pack de la taille d'ATM10
+(~250 mods, tous non identifiés juste après l'installation) dépassait le
+`max_execution_time` de 30 s de PHP — `Maximum execution time of 30 seconds
+exceeded` en plein milieu de `curseForgeFingerprint()`, la liste restant
+bloquée sur « Scanning… » indéfiniment. `list()` traite désormais les mods en
+attente par lot borné à 15 s réels (`SCAN_TIME_BUDGET_SECONDS`), pas par
+nombre fixe : ce qui n'entre pas dans le budget revient marqué
+`reason: 'pending_scan'` (un état que `isReusable()` anticipait déjà sans que
+rien ne le produise) et n'est **pas** mis en cache, donc l'appel suivant le
+reprend sans relire ce qui est déjà identifié. Le contrôleur renvoie
+maintenant `{ mods, scanning }` au lieu d'un tableau brut, et l'onglet sonde
+toutes les 1,5 s tant que `scanning` est vrai, en affichant les résultats
+partiels au fur et à mesure plutôt que de bloquer derrière un spinner unique.
 
 Restent ouverts sur cet onglet :
 
@@ -254,8 +269,9 @@ Par ordre de facilité :
 
 ## Ordre suggéré
 
-1. **Tester sur un panel** l'onglet Mods et l'[état installé](#42-connaître-létat-installé--fait)
-   — tous deux complets, ni l'un ni l'autre n'a jamais tourné.
+1. **Revérifier sur panel** le correctif de scan par lots de l'onglet Mods
+   ([§1](#1-onglet-mods--fait)) et l'[état installé](#42-connaître-létat-installé--fait)
+   — ce dernier n'a jamais tourné sur un panel réel.
 2. **Onglet Plugins** — quasi gratuit après Mods : même service, dossier
    `plugins/` et facettes différentes.
 3. **[4.1](#41-rapport-de-progression) progression** — nécessaire avant tout ce
