@@ -47,8 +47,8 @@ INSTALL.md STRUCTURE.md CLAUDE.md     # docs, not deployed
 
 ## Getting it running
 
-**[`INSTALL.md`](INSTALL.md) is the step-by-step tutorial** (in French). The short
-version:
+**[`INSTALL.md`](INSTALL.md) is the step-by-step tutorial** (in French), and
+**[`BACKLOG.md`](BACKLOG.md) is what is left to build**. The short version:
 
 1. Install Blueprint on a **test** panel. Never develop against production.
 2. Turn on developer mode at `/admin/extensions` → Blueprint → `developer: true`.
@@ -67,9 +67,9 @@ the download-url endpoint returns null, with no legal workaround. This is why
 the installer prefers `serverPackFileId`: a publisher's server pack is one
 archive that sidesteps per-mod redistribution entirely.
 
-**Modrinth `.mrpack` is not a server pack.** It is a manifest, so it needs its
-mods fetched one at a time — not yet supported, and refused with an explanation.
-When it lands, filter `env.server != "unsupported"` or you will ship client-only
+**Modrinth `.mrpack` is not a server pack.** It is a manifest, so its mods are
+fetched one at a time after the archive is unpacked. Two rules that path has to
+keep: drop anything with `env.server == "unsupported"`, or you ship client-only
 mods that crash the server, and apply `server-overrides/` *after* `overrides/`.
 
 **Rate limits.** Modrinth wants a real User-Agent and will throttle you.

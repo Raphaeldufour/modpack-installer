@@ -23,6 +23,7 @@ Vérifié sur un panel réel (Blueprint `beta-2026-06`).
 | Installation sans egg ni réinstallation | ✅ |
 | Résolution des redirections CDN avant Wings | ✅ |
 | `start.sh` généré, heap résolu au démarrage | ✅ |
+| Onglet Mods — recherche, installation, liste des mods installés | ✅ écrit, non testé sur panel |
 
 **Architecture acquise**, à ne pas réinventer pour les onglets suivants :
 le panel résout une URL, Wings télécharge et décompresse, le panel réécrit la
@@ -30,52 +31,36 @@ commande de démarrage. Le serveur garde son egg.
 
 ---
 
-## 1. Onglet Mods
+## 1. Onglet Mods — fait
 
-Le plus rentable des onglets restants : un mod = un fichier, donc aucun problème
-d'échelle, et toute l'infrastructure existe déjà.
+Construit : `ModProviderInterface`, providers Modrinth et CurseForge,
+`ModProviderRegistry`, `ModInstallService`, `InstalledModsService`,
+`ModController`, `ModsSection.tsx`. Reste à tester sur un panel.
 
-### 1.1 Recherche et installation
+**La question ouverte de ce backlog a été tranchée.** Identifier un jar déjà
+présent demandait soit un manifeste local de ce que l'extension avait installé,
+soit une lecture du fichier. C'est la lecture qui a été retenue :
+`getContent` récupère le jar, puis `sha1` interroge Modrinth
+(`/v2/version_files`) et l'empreinte murmur2 interroge CurseForge
+(`/v1/fingerprints`). Avantage décisif : **les mods posés à la main sont
+reconnus**, ce qu'un manifeste local n'aurait jamais fait.
 
-- `ModProviderInterface` sur le modèle de `ProviderInterface` : `search()`,
-  `versions()`, `resolve()`.
-- Modrinth : `/v2/search` avec `facets=[["project_type:mod"]]`, plus
-  `["categories:fabric"]` et `["versions:1.21.1"]` pour les filtres.
-- CurseForge : `/v1/mods/search` avec `classId=6`, `gameVersion` et
-  `modLoaderType` (1=Forge, 4=Fabric, 5=Quilt, 6=NeoForge).
-- Installation : un seul `pull` vers `mods/`. Passer par `RemoteFile::resolve()`
-  — CurseForge redirige.
-- Filtres loader + version Minecraft dans l'UI, comme sur les captures.
+Le prix, à connaître : cela fait transiter chaque jar par le panel, ce que
+l'architecture évite partout ailleurs. C'est borné (plafond de 64 Mo par
+fichier, mods de quelques Mo) et sans alternative pour de l'identification, mais
+c'est la seule exception à la règle — ne pas s'en servir de précédent pour
+justifier de faire passer un pack par le panel.
 
-### 1.2 Lister les mods déjà installés
+Restent ouverts sur cet onglet :
 
-C'est la partie non triviale. `getDirectory('/mods')` donne des noms de
-fichiers, pas des projets.
-
-- Modrinth expose `/v2/version_file/{sha1}?algorithm=sha1` : le hash d'un jar
-  redonne le projet et la version. C'est la seule façon fiable de reconnaître un
-  mod posé à la main.
-- Mais **le panel n'a pas le fichier** — il faudrait le télécharger pour le
-  hasher, ce que l'architecture interdit. Deux issues :
-  - garder un manifeste de ce que l'extension a installé (`.modpacks-state.json`
-    sur le volume, écrit via `putContent`), et n'afficher que ça ;
-  - ou accepter un affichage dégradé : nom de fichier + taille, sans métadonnées.
-- **Décision à prendre avant de coder.** Le manifeste local est plus simple et
-  plus honnête ; il ne reconnaîtra pas les mods installés hors extension, ce
-  qu'il faut dire dans l'UI.
-
-### 1.3 Suppression
-
-- `deleteFiles('/mods', [...])`, plus retrait de l'entrée du manifeste.
-- Exiger `file.delete`.
-
-### 1.4 Compatibilité version / mods — *à la fin*
-
-Comparer la version Minecraft du serveur (déduite d'où ?) avec celles déclarées
-par chaque mod. Suppose de connaître la version installée de façon fiable →
-dépend de [4.2](#42-connaître-létat-installé).
-
----
+- **Suppression** d'un mod installé (`deleteFiles('/mods', …)`, exige
+  `file.delete`).
+- **Compatibilité version / mods** — comparer la version Minecraft du serveur
+  avec celles déclarées par chaque mod. Dépend de
+  [4.2](#42-connaître-létat-installé).
+- Rien à faire côté cache : `.modpacks-mods-state.json` sur le volume garde
+  l'identification par signature d'entrée, et seuls les jars inconnus ou modifiés
+  sont relus.
 
 ## 2. Onglet Plugins
 
@@ -90,9 +75,10 @@ Structurellement identique à Mods, dossier `plugins/` au lieu de `mods/`.
 - Les plugins ne concernent que Paper/Purpur/Spigot ; masquer l'onglet ou
   avertir si le serveur tourne sur Forge/Fabric.
 
-**Réutilisation** : si Mods est bien découpé, Plugins est essentiellement le même
-service avec un dossier et des facettes différents. Écrire Mods en gardant ça en
-tête.
+**Réutilisation** : Mods étant fait, Plugins est le même service avec un dossier
+et des facettes différents. Mais `InstalledModsService` **code `mods/` en dur**,
+tout comme le nom de son fichier d'état. Le premier travail de cet onglet est
+donc d'extraire le dossier en paramètre plutôt que de dupliquer 500 lignes.
 
 ---
 
@@ -246,11 +232,12 @@ Par ordre de facilité :
 
 ## Ordre suggéré
 
-1. **Onglet Mods** — valeur immédiate, aucune inconnue technique, et il fixe les
-   conventions que Plugins réutilisera.
+1. **Tester l'onglet Mods sur le panel**, et la suppression qui lui manque
+   encore. Il est écrit mais n'a jamais tourné.
 2. **[4.2](#42-connaître-létat-installé) état installé** — petit, et débloque
    l'affichage « version en cours » et les filtres de compatibilité.
-3. **Onglet Plugins** — quasi gratuit après Mods.
+3. **Onglet Plugins** — quasi gratuit après Mods : même service, dossier
+   `plugins/` et facettes différentes.
 4. **[4.1](#41-rapport-de-progression) progression** — nécessaire avant tout ce
    qui télécharge en masse.
 5. **[5.1](#51-packs-curseforge-à-manifeste) packs CurseForge à manifeste** —

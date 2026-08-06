@@ -134,22 +134,18 @@ skipped when empty, and `dashboard.components`, `data.directory`, `data.public`,
 
 ## Known gaps
 
-- [ ] Forge and NeoForge in the Versions tab — they ship an installer that has
-      to be run, so they need a mechanism the other four do not
-- [ ] Worlds, Plugins and Mods tabs, all on the Versions tab's file-work path
-- [ ] FTB, Technic, ATLauncher providers
-- [ ] CurseForge packs without a published server pack. Their manifest lists
-      project and file ids rather than URLs, so each mod needs a download-url
-      call and a redirect followed — that needs the bulk files endpoint and work
-      off the request thread. Refused with an explanation for now
-- [ ] Manifest mods are queued on Wings with `foreground: false`, so a mod that
-      fails to download does so silently. Needs progress reporting to fix
-      properly
-- [ ] Surface CurseForge `allowModDistribution: false` blocks in the UI
-- [ ] Hide the tab on non-Minecraft eggs (mirror the framework's
-      `ServerRouter.tsx` egg-filtering logic)
-- [ ] Progress reporting during install; the request is synchronous today
-- [ ] Offer a backup before wiping
+[`BACKLOG.md`](BACKLOG.md) is the detailed list — what is left, why, and what
+each piece will cost. Keep it there rather than restating it here, so the two
+cannot drift apart. The short version:
+
+- Plugins and Worlds tabs, on the install path the Versions and Mods tabs
+  established
+- Forge and NeoForge in Versions: they ship an installer that must be executed,
+  which `ModpackInstallService::writeBootstrap()` already does at first boot and
+  which needs extracting to be reused
+- CurseForge packs without a published server pack, and the progress reporting
+  they depend on
+- No automated tests
 
 ## Testing
 
