@@ -61,6 +61,6 @@ class PurpurSoftware implements SoftwareInterface
 
         // Purpur serves the jar straight off this path rather than handing back
         // a URL to follow, so there is nothing further to resolve.
-        return new Download(self::BASE . "/{$minecraftVersion}/{$build}/download");
+        return new Download(self::BASE . "/{$minecraftVersion}/{$build}/download", resolvedBuild: $build);
     }
 }

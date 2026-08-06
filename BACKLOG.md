@@ -24,6 +24,7 @@ Vérifié sur un panel réel (Blueprint `beta-2026-06`).
 | Résolution des redirections CDN avant Wings | ✅ |
 | `start.sh` généré, heap résolu au démarrage | ✅ |
 | Onglet Mods — recherche, installation, liste, suppression | ✅ écrit, non testé sur panel |
+| État installé — bannière « en cours » sur Versions et Modpacks | ✅ écrit, non testé sur panel |
 
 **Architecture acquise**, à ne pas réinventer pour les onglets suivants :
 le panel résout une URL, Wings télécharge et décompresse, le panel réécrit la
@@ -55,7 +56,7 @@ Restent ouverts sur cet onglet :
 
 - **Compatibilité version / mods** — comparer la version Minecraft du serveur
   avec celles déclarées par chaque mod. Dépend de
-  [4.2](#42-connaître-létat-installé).
+  [4.2](#42-connaître-létat-installé--fait).
 - Rien à faire côté cache : `.modpacks-mods-state.json` sur le volume garde
   l'identification par signature d'entrée, et seuls les jars inconnus ou modifiés
   sont relus.
@@ -117,15 +118,34 @@ Deux approches :
 
 La seconde débloque aussi [5.1](#51-packs-curseforge-à-manifeste).
 
-### 4.2 Connaître l'état installé
+### 4.2 Connaître l'état installé — fait
 
-Les captures montrent « Currently running Paper 1.21.4, build #173 ». Rien ne le
-sait aujourd'hui.
+`InstalledStateService` écrit `.modpacks-state.json` à la fin de chaque
+installation réussie (`VersionInstallService::handle()` et
+`ModpackInstallService::handle()`), et le lit via `GET /state`
+(`StateController`). Les onglets Versions et Modpacks affichent tous deux la
+bannière « Currently running… » / « Installed… » via un hook partagé
+(`components/sections/shared/InstalledState.tsx`), rafraîchie après chaque
+install réussie plutôt qu'au rechargement de la page.
 
-- Écrire ce qui vient d'être installé dans `.modpacks-state.json` sur le volume.
-- L'onglet Versions l'affiche et signale les builds plus récents.
-- Prérequis de la compatibilité mods ([1.4](#14-compatibilité-version--mods--à-la-fin))
-  et du filtrage par version dans Mods/Plugins.
+Le nom du pack et de la version affichés viennent du frontend (`packName`,
+`versionName` dans le corps de `POST /install`) plutôt que d'un second appel
+provider : ce sont des libellés cosmétiques, jamais utilisés pour résoudre ou
+autoriser quoi que ce soit, donc les faire venir du client — qui les a déjà
+depuis sa recherche — évite un aller-retour. Le build réellement résolu (pas
+seulement celui demandé) est capturé via `Download::$resolvedBuild`, alimenté
+par les quatre implémentations de `SoftwareInterface`, pour qu'« installer la
+dernière version » enregistre *laquelle* plutôt que le mot « dernière ».
+
+Reste ouvert :
+
+- **Non testé sur panel.**
+- Le signal de « build plus récent disponible » (comparer le build enregistré
+  aux derniers de `SoftwareInterface::builds()`) n'est pas encore affiché — la
+  donnée existe, l'UI de comparaison reste à écrire.
+- Prérequis de la compatibilité mods
+  ([1](#1-onglet-mods--fait), point resté ouvert) et du filtrage par version
+  dans Plugins.
 
 ### 4.3 Sauvegarde avant écrasement
 
@@ -230,17 +250,15 @@ Par ordre de facilité :
 
 ## Ordre suggéré
 
-1. **Tester l'onglet Mods sur le panel.** Il est complet — recherche,
-   installation, liste et suppression — mais n'a jamais tourné.
-2. **[4.2](#42-connaître-létat-installé) état installé** — petit, et débloque
-   l'affichage « version en cours » et les filtres de compatibilité.
-3. **Onglet Plugins** — quasi gratuit après Mods : même service, dossier
+1. **Tester sur un panel** l'onglet Mods et l'[état installé](#42-connaître-létat-installé--fait)
+   — tous deux complets, ni l'un ni l'autre n'a jamais tourné.
+2. **Onglet Plugins** — quasi gratuit après Mods : même service, dossier
    `plugins/` et facettes différentes.
-4. **[4.1](#41-rapport-de-progression) progression** — nécessaire avant tout ce
+3. **[4.1](#41-rapport-de-progression) progression** — nécessaire avant tout ce
    qui télécharge en masse.
-5. **[5.1](#51-packs-curseforge-à-manifeste) packs CurseForge à manifeste** —
+4. **[5.1](#51-packs-curseforge-à-manifeste) packs CurseForge à manifeste** —
    dépend du point précédent.
-6. **Onglet Worlds** — plus risqué (écrasement de monde), à faire après
+5. **Onglet Worlds** — plus risqué (écrasement de monde), à faire après
    [4.3](#43-sauvegarde-avant-écrasement).
-7. **[5.3](#53-forge-et-neoforge-dans-longlet-versions) Forge/NeoForge** — le
+6. **[5.3](#53-forge-et-neoforge-dans-longlet-versions) Forge/NeoForge** — le
    script existe déjà, c'est surtout de l'extraction.

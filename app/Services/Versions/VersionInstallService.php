@@ -12,6 +12,7 @@ use Pterodactyl\Repositories\Wings\DaemonPowerRepository;
 use Pterodactyl\Services\Servers\StartupModificationService;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\JavaVersion;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\RemoteFile;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\InstalledStateService;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 
 /**
@@ -40,6 +41,7 @@ class VersionInstallService
         private DaemonFileRepository $fileRepository,
         private DaemonPowerRepository $powerRepository,
         private StartupModificationService $startupModificationService,
+        private InstalledStateService $installedState,
     ) {
     }
 
@@ -107,6 +109,14 @@ class VersionInstallService
         $this->startupModificationService
             ->setUserLevel(User::USER_LEVEL_ADMIN)
             ->handle($server, $data);
+
+        $this->installedState->recordSoftware(
+            $server,
+            $softwareKey,
+            $software->label(),
+            $minecraftVersion,
+            $download->resolvedBuild,
+        );
 
         return $notes;
     }

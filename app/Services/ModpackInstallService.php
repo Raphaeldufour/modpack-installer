@@ -45,6 +45,7 @@ class ModpackInstallService
         private DaemonFileRepository $fileRepository,
         private DaemonPowerRepository $powerRepository,
         private StartupModificationService $startupModificationService,
+        private InstalledStateService $installedState,
     ) {
     }
 
@@ -59,6 +60,8 @@ class ModpackInstallService
         string $packId,
         string $versionId,
         bool $wipe = true,
+        ?string $packName = null,
+        ?string $versionName = null,
     ): array {
         $provider = $this->registry->get($providerKey);
 
@@ -95,6 +98,19 @@ class ModpackInstallService
         $jar = $this->installServerJar($server, $plan, $notes);
 
         $this->writeStartup($server, $plan, $jar, $notes);
+
+        $this->installedState->recordModpack(
+            $server,
+            $providerKey,
+            $provider->label(),
+            $packId,
+            $packName,
+            $versionId,
+            $versionName,
+            $plan->minecraftVersion,
+            $plan->loader,
+            $plan->loaderVersion,
+        );
 
         return $notes;
     }

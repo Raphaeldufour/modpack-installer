@@ -14,6 +14,15 @@ class Download
     public function __construct(
         public readonly string $url,
         public readonly string $filename = 'server.jar',
+
+        /**
+         * The build that was actually fetched, when the caller passed no build
+         * and resolve() picked the latest one. Null for software with no build
+         * concept (Vanilla). Exists so a caller who asked for "latest" can still
+         * record what that meant, instead of writing "latest" to a state file
+         * that stays true only until the next build ships.
+         */
+        public readonly ?string $resolvedBuild = null,
     ) {
     }
 }

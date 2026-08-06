@@ -107,6 +107,6 @@ class PaperSoftware implements SoftwareInterface
             throw new \RuntimeException("{$this->displayName} build {$build} publishes no server download.");
         }
 
-        return new Download($url);
+        return new Download($url, resolvedBuild: $build);
     }
 }

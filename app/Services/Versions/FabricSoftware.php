@@ -83,6 +83,6 @@ class FabricSoftware implements SoftwareInterface
             rawurlencode($minecraftVersion),
             rawurlencode($build),
             rawurlencode($this->installerVersion()),
-        ));
+        ), resolvedBuild: $build);
     }
 }

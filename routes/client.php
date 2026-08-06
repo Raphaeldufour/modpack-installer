@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\ModController;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\StateController;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\ModpackController;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Http\Controllers\VersionController;
 use Pterodactyl\Http\Middleware\Api\Client\Server\AuthenticateServerAccess;
@@ -84,4 +85,9 @@ Route::group([
 
     Route::post('/software/install', [VersionController::class, 'install'])
         ->name('api:client:server.modpacks.software.install');
+
+    // Shared by the Versions and Modpacks tabs: whichever installed most
+    // recently is what this reports.
+    Route::get('/state', [StateController::class, 'show'])
+        ->name('api:client:server.modpacks.state');
 });

@@ -109,6 +109,11 @@ class ModpackController extends Controller
             'pack' => 'required|string|max:120',
             'version' => 'required|string|max:120',
             'wipe' => 'nullable|boolean',
+            // Display labels only — never used to resolve or authorise
+            // anything, only recorded so the tabs can show what is installed
+            // without a second round trip to the provider.
+            'packName' => 'nullable|string|max:200',
+            'versionName' => 'nullable|string|max:200',
         ]);
 
         $notes = $this->installService->handle(
@@ -117,6 +122,8 @@ class ModpackController extends Controller
             $data['pack'],
             $data['version'],
             $request->boolean('wipe', true),
+            $data['packName'] ?? null,
+            $data['versionName'] ?? null,
         );
 
         return new JsonResponse(['data' => ['status' => 'installed', 'notes' => $notes]]);

@@ -3,6 +3,7 @@ import http, { httpErrorToHuman } from '@/api/http';
 import { ServerContext } from '@/state/server';
 import PageContentBlock from '@/components/elements/PageContentBlock';
 import { usePermissions } from '@/plugins/usePermissions';
+import { InstalledStateBanner, useInstalledState } from './shared/InstalledState';
 
 /*
  * The Modpacks tab.
@@ -57,6 +58,9 @@ const ModpacksSection = () => {
     // not alongside the panel's own /api/client/servers routes. Confirmed with
     // `php artisan route:list | grep modpacks`; re-check after a Blueprint upgrade.
     const base = `/api/client/extensions/modpacks/servers/${uuid}`;
+
+    const { state: installedState, loading: loadingInstalledState, refresh: refreshInstalledState } =
+        useInstalledState(base);
 
     const [providers, setProviders] = useState<Provider[]>([]);
     const [provider, setProvider] = useState<string>('');
@@ -165,6 +169,11 @@ const ModpacksSection = () => {
         setError(null);
         setNotice(null);
 
+        // Computed here rather than via the later `selectedVersion` const:
+        // that binding sits below this closure in the file and referencing it
+        // here would be a temporal-dead-zone error, not just a style choice.
+        const version = versions.find((v) => v.id === versionId) || null;
+
         http.post(`${base}/install`, {
             provider: selected.provider,
             pack: selected.id,
@@ -174,6 +183,10 @@ const ModpacksSection = () => {
             // time, producing `value=0.1.0` and a syntax error.
             version: versionId,
             wipe,
+            // Display labels only, for the "currently installed" state the
+            // panel keeps — the ids above are what every real lookup keys off.
+            packName: selected.name,
+            versionName: version?.name ?? null,
         })
             .then(() => {
                 setConfirming(false);
@@ -181,6 +194,7 @@ const ModpacksSection = () => {
                     'Installation started. Progress is streamed to the server console — the server ' +
                         'will be unavailable until it finishes.',
                 );
+                refreshInstalledState();
             })
             .catch((e) => {
                 setConfirming(false);
@@ -193,6 +207,8 @@ const ModpacksSection = () => {
 
     return (
         <PageContentBlock title={'Modpacks'}>
+            <InstalledStateBanner state={installedState} loading={loadingInstalledState} />
+
             {error && (
                 <div className={'mb-4 rounded bg-red-500 p-4 text-sm text-red-50'} role={'alert'}>
                     {error}

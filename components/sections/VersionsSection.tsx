@@ -3,6 +3,7 @@ import http, { httpErrorToHuman } from '@/api/http';
 import { ServerContext } from '@/state/server';
 import PageContentBlock from '@/components/elements/PageContentBlock';
 import { usePermissions } from '@/plugins/usePermissions';
+import { InstalledStateBanner, useInstalledState } from './shared/InstalledState';
 
 /*
  * The Versions tab: swap the server jar for another build of another server
@@ -37,6 +38,9 @@ const VersionsSection = () => {
     const canInstall = canUpdateStartup && canDeleteFiles;
 
     const base = `/api/client/extensions/modpacks/servers/${uuid}`;
+
+    const { state: installedState, loading: loadingInstalledState, refresh: refreshInstalledState } =
+        useInstalledState(base);
 
     const [software, setSoftware] = useState<Software[]>([]);
     const [selected, setSelected] = useState<string>('');
@@ -145,6 +149,7 @@ const VersionsSection = () => {
                         ' ',
                     ),
                 );
+                refreshInstalledState();
             })
             .catch((e) => {
                 setConfirming(false);
@@ -159,6 +164,8 @@ const VersionsSection = () => {
 
     return (
         <PageContentBlock title={'Versions'}>
+            <InstalledStateBanner state={installedState} loading={loadingInstalledState} />
+
             {error && (
                 <div className={'mb-4 rounded bg-red-500 p-4 text-sm text-red-50'} role={'alert'}>
                     {error}
