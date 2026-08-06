@@ -30,7 +30,13 @@ interface ProviderInterface
      * The index is read off the server after unpacking, so this receives its
      * contents rather than fetching anything itself.
      *
-     * @return array[] each ['path' => string, 'url' => string]
+     * `sha1` is optional and, when present, is the content hash the manifest
+     * format itself already carries for that file (Modrinth's .mrpack does;
+     * CurseForge's manifest does not). It lets the caller seed the installed-
+     * mods cache from a hash it was already handed instead of reading the file
+     * back through Wings and hashing it again once the download lands.
+     *
+     * @return array[] each ['path' => string, 'url' => string, 'sha1' => ?string]
      */
     public function manifestFiles(string $indexContents): array;
 }

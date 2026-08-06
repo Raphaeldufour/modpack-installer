@@ -198,6 +198,116 @@ class InstalledModsService
         return [$mods, $unreached];
     }
 
+    /**
+     * Record a mod this extension just installed, using the identity the
+     * installer already resolved rather than waiting for the next scan to
+     * rediscover it by reading the file back and hashing it.
+     *
+     * Display fields (name, icon, version name) are trusted from the caller —
+     * see ModController::install() for why that is fine here, the same way
+     * InstalledStateService trusts a modpack's display name from the tab.
+     *
+     * @param array{provider: string, project_id: string, project_name: string,
+     *              version_id: string, version_name: string, icon_url: ?string} $mod
+     */
+    public function seedIdentified(Server $server, string $path, array $mod): void
+    {
+        $this->writeIdentifiedEntries($server, [$path => $mod + ['recognized' => true]]);
+    }
+
+    /**
+     * Record mods whose identity is not known yet, but whose content hash is —
+     * a Modrinth `.mrpack` manifest embeds a sha1 per file for exactly this
+     * purpose. Resolving them costs one bulk API call for the whole batch and
+     * touches Wings only for a single directory listing; no file is read back
+     * through the panel to compute a hash that was already handed to us.
+     *
+     * A hash Modrinth does not recognise (mod removed since the pack was
+     * built, or matched against a different provider) is silently left for
+     * the ordinary scan to identify the slow way — this is a fast path, not
+     * the only path.
+     *
+     * @param array<string, string> $sha1ByPath mod path (e.g. "mods/x.jar") => sha1
+     */
+    public function seedFromKnownHashes(Server $server, array $sha1ByPath): void
+    {
+        if ($sha1ByPath === []) {
+            return;
+        }
+
+        $modrinth = $this->identifyModrinthMany(array_values($sha1ByPath));
+
+        if ($modrinth === []) {
+            return;
+        }
+
+        $modsByPath = [];
+
+        foreach ($sha1ByPath as $path => $sha1) {
+            if (isset($modrinth[$sha1])) {
+                $modsByPath[$path] = $modrinth[$sha1] + ['recognized' => true];
+            }
+        }
+
+        $this->writeIdentifiedEntries($server, $modsByPath);
+    }
+
+    /**
+     * Shared write path for both seeding methods above. The signature that
+     * makes a cached entry reusable is always derived from the file's actual
+     * directory entry at write time, never guessed — an entry not yet visible
+     * on disk (a background download still in flight) is skipped rather than
+     * written with a signature that would not match once it finishes, and is
+     * picked up by the ordinary scan once it lands.
+     *
+     * A failure here is bookkeeping lost, not an install broken: caught and
+     * logged, never thrown, the same posture InstalledStateService takes.
+     *
+     * @param array<string, array> $modsByPath mod path => mod array, without '_signature'
+     */
+    private function writeIdentifiedEntries(Server $server, array $modsByPath): void
+    {
+        if ($modsByPath === []) {
+            return;
+        }
+
+        try {
+            $repository = $this->fileRepository->setServer($server);
+
+            $byName = [];
+            foreach ($this->modEntries($repository) as $entry) {
+                $byName[$entry['name']] = $entry;
+            }
+
+            $state = $this->readState($repository);
+            $changed = false;
+
+            foreach ($modsByPath as $path => $mod) {
+                $entry = $byName[basename($path)] ?? null;
+
+                if ($entry === null) {
+                    continue;
+                }
+
+                $state[$path] = [
+                    'version' => self::STATE_VERSION,
+                    'signature' => $this->signature($entry),
+                    'mod' => $mod + ['path' => $path, 'size' => $entry['size'] ?? null],
+                ];
+                $changed = true;
+            }
+
+            if ($changed) {
+                $this->writeState($repository, $state);
+            }
+        } catch (Throwable $exception) {
+            Log::debug('modpacks: could not seed installed-mod state', [
+                'server' => $server->uuid,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+    }
+
     private function withoutInternalKeys(array $mod): array
     {
         unset($mod['_signature']);

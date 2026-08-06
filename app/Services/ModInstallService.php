@@ -14,11 +14,29 @@ class ModInstallService
     public function __construct(
         private ModProviderRegistry $registry,
         private DaemonFileRepository $fileRepository,
+        private InstalledModsService $installedMods,
     ) {
     }
 
-    public function handle(Server $server, string $providerKey, string $modId, string $versionId): string
-    {
+    /**
+     * $modName, $iconUrl and $versionName are display labels only, passed
+     * through from whatever the tab already fetched to search for this mod —
+     * never used to resolve or authorise anything, the same way
+     * InstalledStateService trusts a modpack's display name from its tab.
+     * They exist so the mod this call just installed can be recorded as
+     * already identified (see InstalledModsService::seedIdentified()) without
+     * a second lookup back to the provider for information the browser
+     * already had on screen a moment ago.
+     */
+    public function handle(
+        Server $server,
+        string $providerKey,
+        string $modId,
+        string $versionId,
+        ?string $modName = null,
+        ?string $iconUrl = null,
+        ?string $versionName = null,
+    ): string {
         $provider = $this->registry->get($providerKey);
 
         try {
@@ -52,13 +70,29 @@ class ModInstallService
                 ]);
             }
 
-            $repository->pull(RemoteFile::resolve($file['url']), '/mods', [
+            // ThrottledPull absorbs Wings' 3-concurrent-download ceiling — a
+            // modpack install can still be draining its own downloads on this
+            // same server when a user installs a mod by hand right after.
+            ThrottledPull::pull($repository, RemoteFile::resolve($file['url']), '/mods', [
                 'filename' => $filename,
                 'foreground' => true,
             ]);
         } catch (DaemonConnectionException $exception) {
             throw new DisplayException('Wings could not download the mod: ' . $exception->getMessage());
         }
+
+        // Best-effort: the file is on disk (foreground pull just finished), so
+        // this is safe to seed immediately rather than leaving the next scan
+        // to reread and rehash a jar whose identity is already known with
+        // certainty.
+        $this->installedMods->seedIdentified($server, "mods/{$filename}", [
+            'provider' => $providerKey,
+            'project_id' => $modId,
+            'project_name' => $modName ?? $modId,
+            'version_id' => $versionId,
+            'version_name' => $versionName ?? $versionId,
+            'icon_url' => $iconUrl,
+        ]);
 
         return $filename;
     }

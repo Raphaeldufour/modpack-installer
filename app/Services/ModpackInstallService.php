@@ -46,6 +46,7 @@ class ModpackInstallService
         private DaemonPowerRepository $powerRepository,
         private StartupModificationService $startupModificationService,
         private InstalledStateService $installedState,
+        private InstalledModsService $installedMods,
     ) {
     }
 
@@ -89,8 +90,10 @@ class ModpackInstallService
 
         $this->unpack($server, $plan->archiveUrl);
 
+        $sha1ByPath = [];
+
         if (!$plan->selfContained) {
-            $notes = array_merge($notes, $this->applyManifest($server, $provider, $plan));
+            $notes = array_merge($notes, $this->applyManifest($server, $provider, $plan, $sha1ByPath));
         }
 
         // The point of the exercise: whatever the pack runs on, put that exact
@@ -111,6 +114,16 @@ class ModpackInstallService
             $plan->loader,
             $plan->loaderVersion,
         );
+
+        // Left until last on purpose: the mods were only queued for a
+        // background download in applyManifest(), and everything between
+        // there and here (the server jar fetch, the startup rewrite) is time
+        // the small, fast ones get to actually land on disk. Whatever still
+        // has not by now is left for the ordinary scan — this call never
+        // blocks waiting for it.
+        if ($sha1ByPath !== []) {
+            $this->installedMods->seedFromKnownHashes($server, $sha1ByPath);
+        }
 
         return $notes;
     }
@@ -151,9 +164,13 @@ class ModpackInstallService
      * progress reporting, and it is why the note below tells the user where to
      * look.
      *
+     * @param array<string, string> $sha1ByPath out param: path => sha1 for every
+     *        queued file the manifest gave a hash for, so the caller can seed
+     *        the installed-mods cache once the downloads have had time to land.
+     *
      * @return string[]
      */
-    private function applyManifest(Server $server, ProviderInterface $provider, InstallPlan $plan): array
+    private function applyManifest(Server $server, ProviderInterface $provider, InstallPlan $plan, array &$sha1ByPath): array
     {
         $repository = $this->fileRepository->setServer($server);
 
@@ -201,6 +218,14 @@ class ModpackInstallService
 
             if ($this->queueManifestFile($repository, $file, $directory)) {
                 $queued++;
+
+                // Collected for every queued file, not just ones under mods/ —
+                // seedFromKnownHashes() matches against the mods/ directory
+                // listing itself, so a config or override path simply will not
+                // match anything there and is skipped for free.
+                if (!empty($file['sha1'])) {
+                    $sha1ByPath[$file['path']] = $file['sha1'];
+                }
             } else {
                 $failed++;
             }

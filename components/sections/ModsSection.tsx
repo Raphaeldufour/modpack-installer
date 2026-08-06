@@ -235,10 +235,18 @@ const ModsSection = () => {
         setError(null);
         setNotice(null);
 
+        const selectedVersion = versions.find((v) => v.id === versionId);
+
         http.post(`${base}/mods/install`, {
             provider: selected.provider,
             mod: selected.id,
             version: versionId,
+            // Cosmetic labels the tab already has on screen, so the mod this
+            // installs can be recorded as identified immediately instead of
+            // waiting on the next scan to reread and rehash it.
+            modName: selected.name,
+            iconUrl: selected.iconUrl ?? undefined,
+            versionName: selectedVersion?.name,
         })
             .then(({ data }) => {
                 const filename = data?.data?.filename;

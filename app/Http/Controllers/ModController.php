@@ -89,6 +89,12 @@ class ModController extends Controller
             'provider' => 'required|string|max:32',
             'mod' => 'required|string|max:120',
             'version' => 'required|string|max:120',
+            // Cosmetic only — see ModInstallService::handle()'s docblock. Not
+            // used to resolve or authorise anything, so validation here only
+            // needs to keep the state file's entries a sane size.
+            'modName' => 'nullable|string|max:200',
+            'iconUrl' => 'nullable|string|max:2000',
+            'versionName' => 'nullable|string|max:200',
         ]);
 
         $filename = $this->installService->handle(
@@ -96,6 +102,9 @@ class ModController extends Controller
             $data['provider'],
             $data['mod'],
             $data['version'],
+            $data['modName'] ?? null,
+            $data['iconUrl'] ?? null,
+            $data['versionName'] ?? null,
         );
 
         return new JsonResponse(['data' => ['status' => 'installed', 'filename' => $filename]]);

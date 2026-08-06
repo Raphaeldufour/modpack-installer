@@ -152,7 +152,13 @@ class ModrinthProvider implements ProviderInterface
                 continue;
             }
 
-            $files[] = ['path' => $path, 'url' => $url];
+            $sha1 = $file['hashes']['sha1'] ?? null;
+
+            $files[] = [
+                'path' => $path,
+                'url' => $url,
+                'sha1' => is_string($sha1) && $sha1 !== '' ? $sha1 : null,
+            ];
         }
 
         return $files;

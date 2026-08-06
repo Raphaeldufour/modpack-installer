@@ -67,6 +67,38 @@ maintenant `{ mods, scanning }` au lieu d'un tableau brut, et l'onglet sonde
 toutes les 1,5 s tant que `scanning` est vrai, en affichant les résultats
 partiels au fur et à mesure plutôt que de bloquer derrière un spinner unique.
 
+**Amorçage de l'état à l'installation — fait.** Un scan par lots de 15 s reste
+long à l'échelle d'un pack de plusieurs centaines de mods : même optimisé, il
+faut plusieurs allers-retours pour tout identifier. Plutôt que de laisser le
+scan redécouvrir ce que l'extension vient elle-même d'installer,
+`InstalledModsService::seedIdentified()` et `::seedFromKnownHashes()` écrivent
+l'entrée du cache au moment de l'install, avec l'identité déjà connue :
+
+- **Installation d'un mod seul** (`ModsSection.tsx` → `ModController::install()`
+  → `ModInstallService::handle()`) : le pull est en foreground, donc le fichier
+  est déjà sur le disque quand l'appel revient. `seedIdentified()` écrit
+  directement l'entrée avec les champs d'affichage (nom, icône, version) que
+  l'onglet avait déjà à l'écran — aucun aller-retour supplémentaire vers le
+  provider.
+- **Installation d'un modpack Modrinth** (`ModpackInstallService::applyManifest()`) :
+  le format `.mrpack` embarque un `sha1` par fichier dans
+  `modrinth.index.json`. `ProviderInterface::manifestFiles()` le remonte
+  désormais, et `seedFromKnownHashes()` résout le lot en un seul appel groupé à
+  `/v2/version_files` — sans jamais relire un fichier pour le hasher, puisque
+  le hash était déjà dans le manifeste. Appelé en toute fin de
+  `ModpackInstallService::handle()`, après le jar serveur et l'écriture du
+  startup, pour laisser le plus de temps possible aux téléchargements de fond
+  (`foreground: false`, plafonnés à 3 en parallèle par Wings) d'atterrir avant
+  la vérification. Ce qui n'est pas encore sur le disque à ce moment-là est
+  simplement laissé de côté — l'écriture ne vérifie l'entrée réelle du dossier
+  qu'au moment d'écrire, jamais en la devinant — et repris par le scan normal.
+
+**Limite explicite : les packs CurseForge autonomes (zip serveur déjà
+assemblé, sans manifeste par fichier) ne sont pas couverts.** Il n'existe pas
+de hash par fichier à récupérer avant le téléchargement dans ce cas — voir
+[5.1](#51-packs-curseforge-à-manifeste). Ces packs continuent de dépendre
+entièrement du scan borné à 15 s déjà en place.
+
 Restent ouverts sur cet onglet :
 
 - **Compatibilité version / mods** — comparer la version Minecraft du serveur
