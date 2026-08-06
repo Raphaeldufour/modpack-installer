@@ -15,7 +15,7 @@ Vérifié sur un panel réel (Blueprint `beta-2026-06`).
 
 | Fonction | État |
 |---|---|
-| Onglet Versions — Vanilla, Paper, Purpur, Fabric, Folia, Velocity | ✅ |
+| Onglet Versions — Vanilla, Paper, Purpur, Fabric, Folia, Velocity | ✅ grille par catégories façon mcjars.app — voir note ci-dessous |
 | Onglet Modpacks — recherche, versions, providers Modrinth + CurseForge | ✅ |
 | Modpacks — install d'un server pack CurseForge | ✅ testé (ATM10) |
 | Modpacks — install d'un `.mrpack` Modrinth | ✅ écrit, non testé sur panel |
@@ -30,6 +30,27 @@ Vérifié sur un panel réel (Blueprint `beta-2026-06`).
 **Architecture acquise**, à ne pas réinventer pour les onglets suivants :
 le panel résout une URL, Wings télécharge et décompresse, le panel réécrit la
 commande de démarrage. Le serveur garde son egg.
+
+**Onglet Versions, refonte visuelle — fait.** Le sélecteur à trois `<select>`
+plats a été remplacé par une grille de cartes groupées par catégorie
+(Recommended / Established / Experimental), sur le modèle de mcjars.app :
+`SoftwareRegistry::toArray()` renvoie désormais `category` et
+`minecraftVersionCount` en plus de `key`/`label`, et `VersionsSection.tsx`
+affiche les cartes avec une icône dessinée en SVG inline (pas de logo hotlinké
+— un logo cassé ou bloqué n'a pas sa place dans une grille censée s'afficher
+instantanément). La carte du logiciel actuellement installé est marquée
+« Running » et la grille s'ouvre déjà pointée dessus. Un bandeau jaune signale
+en plus quand le build installé n'est plus le dernier disponible, en
+réutilisant l'appel `builds()` déjà exposé par l'API.
+
+**Ce qui n'a délibérément pas été copié : le total de builds par carte.**
+Chez mcjars.app, ce chiffre vient d'une base qui indexe depuis longtemps
+chaque build jamais publié par chaque logiciel. Cette extension n'a pas cet
+historique et ne fait que relayer les API amont en direct — calculer un total
+en direct pour Paper, par exemple, coûterait un appel amont par version
+Minecraft déjà publiée (44 aujourd'hui) rien que pour afficher la grille. Seul
+`minecraftVersionCount` est affiché, qui ne coûte qu'un seul appel déjà mis en
+cache 300s par chaque implémentation.
 
 ---
 
