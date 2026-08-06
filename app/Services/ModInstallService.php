@@ -63,6 +63,65 @@ class ModInstallService
         return $filename;
     }
 
+    /**
+     * Remove mods from the server's mods/ directory.
+     *
+     * The names come from the browser, so each is reduced to a basename before
+     * it reaches Wings — a path is a delete target here, and `../server.jar`
+     * would otherwise be a perfectly valid thing to ask for.
+     *
+     * The listing's state file is not touched: it is rebuilt from whatever is
+     * actually in the directory on the next scan, so a removed mod drops out of
+     * it on its own.
+     *
+     * @param string[] $filenames
+     *
+     * @return string[] the names actually sent for deletion
+     *
+     * @throws \Pterodactyl\Exceptions\DisplayException
+     */
+    public function delete(Server $server, array $filenames): array
+    {
+        $targets = [];
+
+        foreach ($filenames as $filename) {
+            if (!is_string($filename)) {
+                continue;
+            }
+
+            $basename = basename(str_replace('\\', '/', $filename));
+
+            // A leading dot would let the state file itself be deleted.
+            if ($basename === '' || $basename === '.' || $basename === '..' || str_starts_with($basename, '.')) {
+                continue;
+            }
+
+            // Reducing "../server.jar" to a basename already confines it to
+            // mods/, but it would then delete a real file under a name nobody
+            // asked for. Anything that was not already a bare name is refused
+            // instead, so the request either does what it says or nothing.
+            if ($basename !== $filename) {
+                continue;
+            }
+
+            $targets[] = $basename;
+        }
+
+        $targets = array_values(array_unique($targets));
+
+        if ($targets === []) {
+            throw new DisplayException('No mod to delete was named.');
+        }
+
+        try {
+            $this->fileRepository->setServer($server)->deleteFiles('/mods', $targets);
+        } catch (DaemonConnectionException $exception) {
+            throw new DisplayException('Wings could not delete the mod: ' . $exception->getMessage());
+        }
+
+        return $targets;
+    }
+
     private function safeFilename(string $filename): string
     {
         $basename = basename(str_replace('\\', '/', $filename));

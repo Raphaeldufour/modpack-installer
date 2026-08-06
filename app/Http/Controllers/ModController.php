@@ -121,6 +121,27 @@ class ModController extends Controller
         }
     }
 
+    public function delete(Request $request, Server $server): JsonResponse
+    {
+        // Deleting is gated separately from installing: file.create lets a
+        // subuser add a mod, which is recoverable, while file.delete is what
+        // removes one.
+        if (!$request->user()->can('file.delete', $server)) {
+            throw new AccessDeniedHttpException(
+                'Deleting a mod requires the file.delete permission.'
+            );
+        }
+
+        $data = $request->validate([
+            'filenames' => 'required|array|min:1|max:200',
+            'filenames.*' => 'required|string|max:255',
+        ]);
+
+        $deleted = $this->installService->delete($server, $data['filenames']);
+
+        return new JsonResponse(['data' => ['status' => 'deleted', 'filenames' => $deleted]]);
+    }
+
     private function authorizeInstall(Request $request, Server $server): void
     {
         foreach (['file.create'] as $permission) {

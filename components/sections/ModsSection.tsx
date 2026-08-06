@@ -56,7 +56,11 @@ const compact = (value: number): string => {
 
 const ModsSection = () => {
     const uuid = ServerContext.useStoreState((state) => state.server.data!.uuid);
-    const [canCreateFiles, canReadFiles] = usePermissions(['file.create', 'file.read']);
+    const [canCreateFiles, canReadFiles, canDeleteFiles] = usePermissions([
+        'file.create',
+        'file.read',
+        'file.delete',
+    ]);
     const base = `/api/client/extensions/modpacks/servers/${uuid}`;
 
     const [providers, setProviders] = useState<Provider[]>([]);
@@ -75,6 +79,8 @@ const ModsSection = () => {
     const [installing, setInstalling] = useState<boolean>(false);
     const [installed, setInstalled] = useState<InstalledMod[]>([]);
     const [loadingInstalled, setLoadingInstalled] = useState<boolean>(false);
+    const [confirmDelete, setConfirmDelete] = useState<InstalledMod | null>(null);
+    const [deleting, setDeleting] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
 
@@ -200,6 +206,29 @@ const ModsSection = () => {
     };
 
     const field = 'rounded border border-neutral-500 bg-neutral-600 p-2 text-sm text-neutral-200';
+    const remove = (mod: InstalledMod) => {
+        setDeleting(true);
+        setError(null);
+        setNotice(null);
+
+        // The API takes a list because a bulk selection is the obvious next
+        // step; the tab sends one for now.
+        http.post(`${base}/mods/delete`, { filenames: [filenameOf(mod)] })
+            .then(() => {
+                setConfirmDelete(null);
+                setNotice(`${filenameOf(mod)} was removed from the mods folder.`);
+                loadInstalled();
+            })
+            .catch((e) => {
+                setConfirmDelete(null);
+                setError(httpErrorToHuman(e));
+            })
+            .then(() => setDeleting(false));
+    };
+
+    // `path` is mods/<file>; Wings is given the bare name.
+    const filenameOf = (mod: InstalledMod): string => mod.path.split('/').pop() || mod.path;
+
     const installedLabel = (mod: InstalledMod): string => {
         if (mod.recognized) return `${mod.provider} - ${mod.version_name}`;
         if (mod.reason === 'pending_scan') return `${mod.version_name} - waiting to scan`;
@@ -271,6 +300,25 @@ const ModsSection = () => {
                                         {installedLabel(mod)}
                                     </p>
                                 </div>
+
+                                <button
+                                    type={'button'}
+                                    onClick={() => setConfirmDelete(mod)}
+                                    disabled={!canDeleteFiles || deleting}
+                                    title={
+                                        canDeleteFiles
+                                            ? `Remove ${filenameOf(mod)}`
+                                            : 'Removing a mod needs the file.delete permission'
+                                    }
+                                    aria-label={`Remove ${filenameOf(mod)}`}
+                                    className={
+                                        'flex-shrink-0 rounded bg-neutral-700 px-3 py-2 text-xs text-neutral-300 ' +
+                                        'hover:bg-red-500 hover:text-red-50 disabled:opacity-40 disabled:hover:bg-neutral-700 ' +
+                                        'disabled:hover:text-neutral-300'
+                                    }
+                                >
+                                    Remove
+                                </button>
                             </div>
                         ))}
                     </div>
@@ -432,6 +480,43 @@ const ModsSection = () => {
                             </div>
                         );
                     })}
+                </div>
+            )}
+
+            {/*
+              * Removing a mod cannot be undone from here, and a dependency
+              * library looks much like an ordinary mod in this list, so the
+              * confirmation names the file rather than the project.
+              */}
+            {confirmDelete && (
+                <div className={'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4'}>
+                    <div className={'w-full max-w-md rounded bg-neutral-700 p-6'}>
+                        <h2 className={'mb-2 text-lg text-neutral-100'}>Remove this mod?</h2>
+                        <p className={'mb-4 text-sm text-neutral-300'}>
+                            <code>{filenameOf(confirmDelete)}</code> will be deleted from the server&apos;s{' '}
+                            <code>mods</code> folder. Other mods that depend on it will fail to load until it is
+                            back.
+                        </p>
+
+                        <div className={'flex justify-end gap-3'}>
+                            <button
+                                type={'button'}
+                                onClick={() => setConfirmDelete(null)}
+                                disabled={deleting}
+                                className={'rounded bg-neutral-600 px-4 py-2 text-sm text-neutral-200'}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type={'button'}
+                                onClick={() => remove(confirmDelete)}
+                                disabled={deleting}
+                                className={'rounded bg-red-500 px-4 py-2 text-sm text-red-50 disabled:opacity-50'}
+                            >
+                                {deleting ? 'Removing…' : 'Yes, remove it'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </PageContentBlock>

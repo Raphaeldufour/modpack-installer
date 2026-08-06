@@ -65,6 +65,11 @@ Route::group([
     Route::post('/mods/install', [ModController::class, 'install'])
         ->name('api:client:server.modpacks.mods.install');
 
+    // POST rather than DELETE: several mods go in one call, and a body on a
+    // DELETE is poorly supported across the stack.
+    Route::post('/mods/delete', [ModController::class, 'delete'])
+        ->name('api:client:server.modpacks.mods.delete');
+
     // Versions tab. Kept under /software so it cannot collide with the modpack
     // routes above, which already own /packs and /versions.
     Route::get('/software', [VersionController::class, 'software'])

@@ -23,7 +23,7 @@ Vérifié sur un panel réel (Blueprint `beta-2026-06`).
 | Installation sans egg ni réinstallation | ✅ |
 | Résolution des redirections CDN avant Wings | ✅ |
 | `start.sh` généré, heap résolu au démarrage | ✅ |
-| Onglet Mods — recherche, installation, liste des mods installés | ✅ écrit, non testé sur panel |
+| Onglet Mods — recherche, installation, liste, suppression | ✅ écrit, non testé sur panel |
 
 **Architecture acquise**, à ne pas réinventer pour les onglets suivants :
 le panel résout une URL, Wings télécharge et décompresse, le panel réécrit la
@@ -53,8 +53,6 @@ justifier de faire passer un pack par le panel.
 
 Restent ouverts sur cet onglet :
 
-- **Suppression** d'un mod installé (`deleteFiles('/mods', …)`, exige
-  `file.delete`).
 - **Compatibilité version / mods** — comparer la version Minecraft du serveur
   avec celles déclarées par chaque mod. Dépend de
   [4.2](#42-connaître-létat-installé).
@@ -232,8 +230,8 @@ Par ordre de facilité :
 
 ## Ordre suggéré
 
-1. **Tester l'onglet Mods sur le panel**, et la suppression qui lui manque
-   encore. Il est écrit mais n'a jamais tourné.
+1. **Tester l'onglet Mods sur le panel.** Il est complet — recherche,
+   installation, liste et suppression — mais n'a jamais tourné.
 2. **[4.2](#42-connaître-létat-installé) état installé** — petit, et débloque
    l'affichage « version en cours » et les filtres de compatibilité.
 3. **Onglet Plugins** — quasi gratuit après Mods : même service, dossier
