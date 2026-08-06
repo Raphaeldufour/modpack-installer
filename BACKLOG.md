@@ -239,12 +239,16 @@ Par ordre de facilité :
   conviennent, mais si un réglage devait un jour être initialisé, c'est là.
 - **Aucune pagination réelle** dans la recherche : `page` est accepté par l'API
   mais l'onglet ne l'expose pas.
-- **Le `.mrpack` Modrinth n'a jamais été testé sur un panel.** Le parsing du
-  manifeste est vérifié, le chemin complet non.
 - **L'image Docker n'est changée que si l'egg en déclare une adaptée.** Sur un
   egg Paper qui n'expose que Java 21, installer une 1.12.2 laissera l'image en
   place et le serveur ne démarrera pas — l'onglet le signale, mais ne le corrige
   pas.
+- **`INSTALL.md` § Dépannage a un entête de tableau dupliqué et des lignes de
+  l'ère egg** (`MODPACK_ID`/`MODPACK_VERSION`, `bash: start.sh`, lignes
+  `BLOCKED:`/`WARN:` d'un log de script qui n'existe plus). Repéré en y
+  ajoutant l'entrée sur la limite de téléchargements concurrents de Wings,
+  pas corrigé — une passe de nettoyage dédiée au fichier serait plus sûre
+  qu'un patch au fil de l'eau.
 
 ---
 

@@ -124,7 +124,7 @@ class ModpackInstallService
             $repository = $this->fileRepository->setServer($server);
 
             // Wings refuses a redirect, so hand it the URL the CDN ends at.
-            $repository->pull(RemoteFile::resolve($url), '/', [
+            ThrottledPull::pull($repository, RemoteFile::resolve($url), '/', [
                 'filename' => $archive,
                 'foreground' => true,
             ]);
@@ -199,18 +199,10 @@ class ModpackInstallService
         foreach ($files as $file) {
             $directory = ltrim(trim(dirname($file['path']), '.'), '/');
 
-            try {
-                $repository->pull($file['url'], '/' . $directory, [
-                    'filename' => basename($file['path']),
-                    'foreground' => false,
-                ]);
+            if ($this->queueManifestFile($repository, $file, $directory)) {
                 $queued++;
-            } catch (DaemonConnectionException $exception) {
+            } else {
                 $failed++;
-                Log::warning('modpacks: could not queue a manifest file', [
-                    'path' => $file['path'],
-                    'message' => $exception->getMessage(),
-                ]);
             }
         }
 
@@ -230,6 +222,29 @@ class ModpackInstallService
         }
 
         return $notes;
+    }
+
+    /**
+     * Queue one manifest file. ThrottledPull absorbs Wings' 3-concurrent
+     * download ceiling; what reaches here is either queued or a real failure.
+     */
+    private function queueManifestFile(DaemonFileRepository $repository, array $file, string $directory): bool
+    {
+        try {
+            ThrottledPull::pull($repository, $file['url'], '/' . $directory, [
+                'filename' => basename($file['path']),
+                'foreground' => false,
+            ]);
+
+            return true;
+        } catch (DaemonConnectionException $exception) {
+            Log::warning('modpacks: could not queue a manifest file', [
+                'path' => $file['path'],
+                'message' => $exception->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     /**
@@ -307,7 +322,10 @@ class ModpackInstallService
                 ->get(self::RESOLVABLE_LOADERS[$loader])
                 ->resolve($plan->minecraftVersion, $plan->loaderVersion);
 
-            $this->fileRepository->setServer($server)->pull(RemoteFile::resolve($download->url), '/', [
+            // A tail of manifest downloads from applyManifest() can still be
+            // draining when this fires, so it is just as exposed to Wings'
+            // concurrency ceiling as the mods themselves were.
+            ThrottledPull::pull($this->fileRepository->setServer($server), RemoteFile::resolve($download->url), '/', [
                 'filename' => $download->filename,
                 'foreground' => true,
             ]);

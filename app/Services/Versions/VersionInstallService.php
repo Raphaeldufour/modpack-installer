@@ -12,6 +12,7 @@ use Pterodactyl\Repositories\Wings\DaemonPowerRepository;
 use Pterodactyl\Services\Servers\StartupModificationService;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\JavaVersion;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\RemoteFile;
+use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\ThrottledPull;
 use Pterodactyl\BlueprintFramework\Extensions\modpacks\Services\InstalledStateService;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 
@@ -79,8 +80,11 @@ class VersionInstallService
         // into a background job the user cannot see.
         try {
             // Wings' downloader treats a redirect as a failure, and Purpur (among
-            // others) serves its jar through one.
-            $this->fileRepository->setServer($server)->pull(RemoteFile::resolve($download->url), '/', [
+            // others) serves its jar through one. It also caps a server at 3
+            // concurrent downloads and rejects anything past that outright — a
+            // modpack install queuing mods on this same server can still be
+            // draining when this fires, so the same retry applies here too.
+            ThrottledPull::pull($this->fileRepository->setServer($server), RemoteFile::resolve($download->url), '/', [
                 'filename' => $download->filename,
                 'foreground' => true,
             ]);
